@@ -1,0 +1,7 @@
+model/CRL/*
+model/DETR/*
+IL_data/*
+image-goal-nav-dataset/*
+data/*
+eval_results/*
+

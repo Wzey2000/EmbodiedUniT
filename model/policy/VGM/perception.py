@@ -9,7 +9,7 @@ from torch_geometric.nn.conv.gatv2_conv import GATv2Conv
 from torch_geometric.nn.conv.gat_conv import GATConv
 from torch_geometric.nn.norm import GraphNorm
 
-from transformers import RobertaTokenizerFast, RobertaModel
+from transformers import RobertaTokenizerFast, RobertaModel, BertTokenizer, BertModel
 
 class Attblock(nn.Module):
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1,
@@ -443,16 +443,18 @@ class Perception(nn.Module):
         if cfg.transformer.with_unified_embedding:
             os.environ['TOKENIZERS_PARALLELISM'] = "true"
             self.with_unified_embedding = True
-            tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
-            roberta_model = RobertaModel.from_pretrained("roberta-base")
+
+            tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+            encoder = BertModel.from_pretrained("bert-base-multilingual-cased")
+
             self.reduce = nn.Linear(768, cfg.transformer.hidden_dim)
             with torch.no_grad():
                 inputs = tokenizer('Go to ', return_tensors="pt")
-                outputs = roberta_model(**inputs)
+                outputs = encoder(**inputs)
                 self.imagenav_instruc_emb = outputs.last_hidden_state # 1 x 5 x 768
 
-        if cfg.transformer.with_tesk_query:
-            self.image_nav_query = nn.Embedding(1,cfg.transformer.hidden_dim)
+        # if cfg.transformer.with_tesk_query:
+        #     self.image_nav_query = nn.Embedding(1,cfg.transformer.hidden_dim)
         
     def get_memory_span(self):
         return self.forget_mask, self.remaining_span, self.max_span

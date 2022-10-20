@@ -47,6 +47,7 @@ python collect_ObjectNav_IL_data.py  --split train/val --traj-dir path/to/Habita
 ```
 
 ## Multi-goal Testing Data Setup
+### ImageNav
 The single and multi-goal train/val datasets for ImageNav should be organized as follows:
 ```
 This repo
@@ -69,7 +70,8 @@ This repo
       
 ```
 
-The test dataset for ObjectNav here is [the Multi-ON](https://github.com/saimwani/multiON)
+### ObjectNav
+We use [the Multi-ON](https://github.com/saimwani/multiON) for ObjectNav.
 
 ## Training
 The EML is trained using Imitation Learning.

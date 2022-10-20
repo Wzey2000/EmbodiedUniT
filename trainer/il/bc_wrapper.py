@@ -1,6 +1,6 @@
 import torch
-
-TIME_DEBUG = False
+from torchvision import transforms
+from utils.encoder_loaders import load_PCL_encoder, load_CRL_encoder
 
 # this wrapper comes after vectorenv
 from env_utils.env_wrapper.graph import Graph
@@ -8,27 +8,45 @@ from env_utils.env_wrapper.env_graph_wrapper import GraphWrapper
 
 class BCWrapper(GraphWrapper):
     metadata = {'render.modes': ['rgb_array']}
-    def __init__(self,exp_config, batch_size):
-        self.exp_config = exp_config
+    def __init__(self, config, observation_space):
+        self.config = config
         self.is_vector_env = True
-        self.num_envs = batch_size
+        self.num_envs = config.BC.batch_size
         self.B = self.num_envs
         self.input_shape = (64, 256)
         self.feature_dim = 512
-        self.scene_data = exp_config.scene_data
-        self.torch = exp_config.TASK_CONFIG.SIMULATOR.HABITAT_SIM_V0.GPU_GPU
-        self.torch_device = 'cuda:' + str(exp_config.TORCH_GPU_ID) if torch.cuda.device_count() > 0 else 'cpu'
-        self.visual_encoder_type = getattr(exp_config, 'visual_encoder_type', 'unsupervised')
-        self.visual_encoder = self.load_visual_encoder(self.visual_encoder_type, self.input_shape, self.feature_dim).to(self.torch_device)
+        self.scene_data = config.scene_data
+        self.torch = config.TASK_CONFIG.SIMULATOR.HABITAT_SIM_V0.GPU_GPU
+        self.torch_device = 'cuda:' + str(config.TORCH_GPU_ID) if torch.cuda.device_count() > 0 else 'cpu'
+        self.visual_encoder_type = getattr(config, 'visual_encoder_type', 'unsupervised')
+        
+        self.pretrained_type = config.memory.pretrained_type
+        if self.pretrained_type == 'PCL':
+            self.visual_encoder = load_PCL_encoder(self.feature_dim)
+        elif self.pretrained_type == 'CRL':
+            if 'depth' in observation_space.spaces:
+                observation_space.spaces.pop('depth')
+            elif 'panoramic_depth' in observation_space.spaces:
+                observation_space.spaces.pop('panoramic_depth')
+            
+            self.trans = transforms.Compose([
+                transforms.Resize((256,256))
+            ])
+            self.visual_encoder = load_CRL_encoder(observation_space)
+        
+        self.visual_encoder.eval()
+        self.visual_encoder.to(self.torch_device)
 
-        self.graph = Graph(exp_config, self.B, self.torch_device)
+        for p in self.visual_encoder.parameters():
+            p.requires_grad = False
+        self.graph = Graph(config, self.B, self.torch_device)
         self.th = 0.75
-        self.num_agents = exp_config.NUM_AGENTS
-        self.need_goal_embedding = 'wo_Fvis' in exp_config.POLICY
+        self.num_agents = config.NUM_AGENTS
+        self.need_goal_embedding = 'wo_Fvis' in config.POLICY
         self.localize_mode = 'predict'
 
         # for forgetting mechanism
-        self.forget = exp_config.memory.FORGET
+        self.forget = config.memory.FORGET
         self.forgetting_recorder = None
         self.forget_node_indices = None
         self.reset_all_memory()

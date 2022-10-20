@@ -1,6 +1,3 @@
-from ipaddress import collapse_addresses
-from operator import mod
-from tkinter.messagebox import NO
 from typing import Optional, Type
 from habitat import Config, Dataset
 import cv2
@@ -73,6 +70,7 @@ class SearchEnv(RLEnv):
         task_config.freeze()
         self.config = config
         self.task_config = task_config
+
         self._core_env_config = config.TASK_CONFIG
         self.success_distance = config.RL.SUCCESS_DISTANCE
         self._previous_measure = None
@@ -85,8 +83,8 @@ class SearchEnv(RLEnv):
             HabitatSimActions.extend_action_space("NOISY_RIGHT")
             HabitatSimActions.extend_action_space("NOISY_LEFT")
 
-        if self.noise: moves = ["NOISY_FORWARD", "NOISY_LEFT", "NOISY_RIGHT"]
-        else: moves = ["MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT"]
+        if self.noise: moves = ["NOISY_FORWARD", "NOISY_LEFT", "NOISY_RIGHT", "LOOK_UP", "LOOK_DOWN"]
+        else: moves = ["MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT", "LOOK_UP", "LOOK_DOWN"]
         if 'STOP' in task_config.TASK.POSSIBLE_ACTIONS:
             self.action_dict = {id+1: move for id, move in enumerate(moves)}
             self.action_dict[0] = "STOP"
@@ -102,7 +100,9 @@ class SearchEnv(RLEnv):
 
         act_dict = {"MOVE_FORWARD": EmptySpace(),
                     'TURN_LEFT': EmptySpace(),
-                    'TURN_RIGHT': EmptySpace()
+                    'TURN_RIGHT': EmptySpace(),
+                    "LOOK_UP": EmptySpace(), 
+                    "LOOK_DOWN": EmptySpace()
         }
         if 'STOP' in task_config.TASK.POSSIBLE_ACTIONS:
             act_dict.update({'STOP': EmptySpace()})
@@ -113,14 +113,20 @@ class SearchEnv(RLEnv):
         self.habitat_env is class Env in custom_habitat_env.py
         """
         obs_dict = {
-                'panoramic_rgb': self.habitat_env._task.sensor_suite.observation_spaces.spaces['panoramic_rgb'],
-                'panoramic_depth': self.habitat_env._task.sensor_suite.observation_spaces.spaces['panoramic_depth'],
-                'target_goal': self.habitat_env._task.sensor_suite.observation_spaces.spaces['target_goal'],
+                'rgb': Box(low=0, high=256, shape=(240, 320, 3), dtype=np.float32),
+        'depth': Box(low=0, high=256, shape=(240, 320, 1), dtype=np.float32),
+        'target_goal': Box(low=0, high=256, shape=(240, 320, 3), dtype=np.float32),
                 'step': Box(low=np.array(0),high=np.array(500), dtype=np.float32),
                 'prev_act': Box(low=np.array(-1), high=np.array(self.action_space.n), dtype=np.int32),
                 'gt_action': Box(low=np.array(-1), high=np.array(self.action_space.n), dtype=np.int32),
                 'target_pose': Box(low=-np.Inf, high=np.Inf, shape=(3,), dtype=np.float32),
                 'distance': Box(low=-np.Inf, high=np.Inf, shape=(1,), dtype=np.float32),
+                "compass": Box(low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32),
+        "gps": Box(
+            low=np.finfo(np.float32).min,
+            high=np.finfo(np.float32).max,
+            shape=(config.TASK_CONFIG.TASK.GPS_SENSOR.DIMENSIONALITY,),
+            dtype=np.float32),
             }
         
         self.mapper = self.habitat_env.task.measurements.measures['top_down_map'] if self.render_map else None
@@ -145,6 +151,8 @@ class SearchEnv(RLEnv):
         elif config.DIFFICULTY == 'hard':
             self.habitat_env.MIN_DIST, self.habitat_env.MAX_DIST = 5.0, 10.0
         elif config.DIFFICULTY == 'random':
+            self.habitat_env.MIN_DIST, self.habitat_env.MAX_DIST = 1.5, 10.0
+        elif config.DIFFICULTY == '1goal':
             self.habitat_env.MIN_DIST, self.habitat_env.MAX_DIST = 1.5, 10.0
         elif config.DIFFICULTY == '2goal':
             self.habitat_env.MIN_DIST, self.habitat_env.MAX_DIST = 10.0, 15.0
@@ -632,6 +640,7 @@ class MultiSearchEnv(SearchEnv):
         self.info['step'] = self.time_t
         self.info['num_goals'] = goal_info['num_goals']
         self.positions.append(self.current_position)
+
         self.obs = self.process_obs(obs)
         self.total_reward += reward
         self.prev_position = self.current_position.copy()
@@ -652,89 +661,3 @@ class MultiSearchEnv(SearchEnv):
 
     def _episode_success(self):
         return self.habitat_env.task.measurements.measures['goal_index'].all_done
-
-if __name__ == '__main__':
-
-    from env_utils.make_env_utils import add_panoramic_camera
-    from configs.default import get_config
-    import numpy as np
-    import os
-    import time
-    from habitat import make_dataset
-    os.environ['CUDA_VISIBLE_DEVICES'] = "0"
-    config = get_config()
-    config.defrost()
-    config.DIFFICULTY = 'hard'
-    habitat_api_path = os.path.join(os.path.dirname(habitat.__file__), '../')
-    config.TASK_CONFIG.DATASET.SCENES_DIR = os.path.join(habitat_api_path, config.TASK_CONFIG.DATASET.SCENES_DIR)
-    config.TASK_CONFIG.DATASET.DATA_PATH = os.path.join(habitat_api_path, config.TASK_CONFIG.DATASET.DATA_PATH)
-    config.TASK_CONFIG.ENVIRONMENT.ITERATOR_OPTIONS.MAX_SCENE_REPEAT_EPISODES = 10
-    config.NUM_PROCESSES = 1
-    config.NUM_VAL_PROCESSES = 0
-
-    dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE)
-    training_scenes = config.TASK_CONFIG.DATASET.CONTENT_SCENES
-    
-    if "*" in config.TASK_CONFIG.DATASET.CONTENT_SCENES:
-        training_scenes = dataset.get_scenes_to_load(config.TASK_CONFIG.DATASET) # get_scenes_to_load() is defined in line 40 in habitat/datasets/pointnav/pointnav_dataset.py
-    
-    config.TASK_CONFIG.DATASET.CONTENT_SCENES = training_scenes
-    config.TASK_CONFIG = add_panoramic_camera(config.TASK_CONFIG)
-    config.record = True
-    config.freeze()
-    action_list = config.TASK_CONFIG.TASK.POSSIBLE_ACTIONS
-
-    env = SearchEnv(config)
-    obs = env.reset()
-    env.build_path_follower()
-    img = env.render('rgb')
-    done = False
-    fps = {}
-    reset_time = {}
-
-    scene = env.habitat_env.current_episode.scene_id.split('/')[-2]
-    fps[scene] = []
-    reset_time[scene] = []
-    imgs = [img]
-    while True:
-        best_action = env.get_best_action()
-        img = env.render('rgb')
-        #imgs.append(img)
-
-        cv2.imshow('render', img[:, :, [2, 1, 0]])
-        key = cv2.waitKey(0)
-        #
-        # if key == ord('s'): action = 1
-        # elif key == ord('w'): action = 0
-        # elif key == ord('a'): action = 1
-        # elif key == ord('d'): action = 2
-        # elif key == ord('r'):
-        #     done = True
-        #     print(done)
-        # elif key == ord('q'):
-        #     break
-        # else:
-        #     action = env.action_space.sample()
-
-        if done:
-            tic = time.time()
-            obs = env.reset()
-            toc = time.time()
-            scene = env.habitat_env.current_episode.scene_id.split('/')[-2]
-            fps[scene] = []
-            reset_time[scene] = []
-            reset_time[scene].append(toc-tic)
-            done = False
-            imgs = []
-        else:
-            tic = time.time()
-            obs, reward, done, info = env.step(best_action)
-            toc = time.time()
-            fps[scene].append(toc-tic)
-            print(toc-tic)
-        #break
-        if len(fps) > 20:
-            break
-    print('===============================')
-    print('FPS : ', [(key, np.array(fps_list).mean()) for key, fps_list in fps.items()])
-    print('Reset : ', [(key, np.array(reset_list).mean()) for key, reset_list in reset_time.items()])

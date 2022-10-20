@@ -332,12 +332,16 @@ class ResNetEncoder(nn.Module):
             if "panoramic_rgb" in observation_space.spaces:
                 self._n_input_rgb = observation_space.spaces["panoramic_rgb"].shape[2]
                 spatial_size = observation_space.spaces["panoramic_rgb"].shape[0] // 2
+            elif 'rgb' in observation_space.spaces:
+                self._n_input_rgb = observation_space.spaces["rgb"].shape[2]
             else:
                 self._n_input_rgb = 0
 
             if "panoramic_depth" in observation_space.spaces:
                 self._n_input_depth = observation_space.spaces["panoramic_depth"].shape[2]
                 spatial_size = observation_space.spaces["panoramic_depth"].shape[0] // 2
+            elif 'depth' in observation_space.spaces:
+                self._n_input_rgb = observation_space.spaces["rgb"].shape[2]
             else:
                 self._n_input_depth = 0
 

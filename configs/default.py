@@ -26,7 +26,7 @@ _C.IL_TRAINER_NAME = "bc"
 _C.RL_TRAINER_NAME = "ppo"
 _C.ENV_NAME = "NavRLEnv"
 _C.SIMULATOR_GPU_ID = 0
-_C.TORCH_GPU_ID = 0
+_C.TORCH_GPU_ID = [0]
 _C.VIDEO_OPTION = ["disk", "tensorboard"]
 
 _C.TENSORBOARD_DIR = "data/logs/"
@@ -40,9 +40,11 @@ _C.NUM_VAL_PROCESSES = 0
 _C.SENSORS = ["RGB_SENSOR", "DEPTH_SENSOR"]
 
 _C.NUM_UPDATES = 100000000
+_C.TOTAL_NUM_STEPS = -1
 _C.LOG_INTERVAL = 10
 _C.LOG_FILE = "train.log"
 _C.CHECKPOINT_INTERVAL = 50
+_C.NUM_CHECKPOINTS = -1
 _C.VIS_INTERVAL = 10
 
 _C.POLICY = 'PointNavResNetPolicy'
@@ -106,23 +108,54 @@ _C.memory.FORGET = False # NOTE: innovation 2
 _C.memory.FORGETTING_ATTN = "goal" # ["cur", "global_node"]
 _C.memory.FORGETTING_TYPE = "simple" # ["Expire"]
 _C.memory.TRAINIG_FORGET = False # use the forgetting mechanism in evaluation, not in training
-# For Expire-span
-_C.memory.EXPIRE_INIT_PERCENTAGE = 0.1
-_C.memory.MAX_SPAN = 32
-_C.memory.PRE_DIV = 6
-_C.memory.RAMP = 6
-_C.memory.EXPIRE_LOSS_COEF = 5e-6
+_C.memory.pretrained_type = 'PCL'
+
 # For simple
 _C.memory.TOLERANCE = 10 # implement forgetting mechanism after TOLERANCE nodes have been created
 _C.memory.RANK = "bottom" # or "top"
 _C.memory.RANK_THRESHOLD = 0.2 # nodes whose att-scores remain in the bottom for several consecutive steps will be forgotten 
 _C.memory.RANDOM_SELECT = False # Whether or not add to randomly select graph nodes. This varibale is used for ablation
 
+# For Habitat-web baseline
+
+_C.CNNRNN = CN()
+_C.CNNRNN.RGB_ENCODER = CN()
+_C.CNNRNN.RGB_ENCODER.cnn_type = "ResnetRGBEncoder"
+_C.CNNRNN.RGB_ENCODER.output_size = 256
+_C.CNNRNN.RGB_ENCODER.ddppo_checkpoint = "../VLN-CE/data/ddppo-models/gibson-2plus-resnet50.pth"
+_C.CNNRNN.RGB_ENCODER.backbone = 'resnet18'
+_C.CNNRNN.RGB_ENCODER.trainable = True
+
+_C.CNNRNN.DEPTH_ENCODER = CN()
+_C.CNNRNN.DEPTH_ENCODER.cnn_type = "VlnResnetDepthEncoder"
+_C.CNNRNN.DEPTH_ENCODER.output_size = 128
+_C.CNNRNN.DEPTH_ENCODER.ddppo_checkpoint = "../VLN-CE/data/ddppo-models/gibson-2plus-resnet50.pth"
+_C.CNNRNN.DEPTH_ENCODER.backbone = 'resnet50'
+_C.CNNRNN.DEPTH_ENCODER.trainable = False
+
+_C.CNNRNN.USE_SEMANTICS = False
+
+_C.SEQ2SEQ = CN()
+_C.SEQ2SEQ.use_prev_action = True
+
+_C.STATE_ENCODER = CN()
+_C.STATE_ENCODER.hidden_size = 512
+_C.STATE_ENCODER.num_recurrent_layers = 2
+_C.STATE_ENCODER.rnn_type = 'GRU'
+
+_C.USE_GPS_COMPASS = False
+# DDP
+_C.DISTRIBUTED = False
+_C.CUDNN = CN()
+_C.CUDNN.BENCHMARK = True
+_C.CUDNN.DETERMINISTIC = False
+_C.CUDNN.ENABLED = True
+
 _C.saving = CN()
 _C.saving.name = 'test'
-_C.saving.log_interval = 100
-_C.saving.save_interval = 500
-_C.saving.eval_interval = 500
+_C.saving.log_interval = 5
+_C.saving.save_interval = 10
+_C.saving.eval_interval = 40
 _C.record = False
 _C.render = False
 _C.record_GAT_att = False
@@ -167,6 +200,7 @@ _C.RL.PPO.rnn_type='LSTM'
 _C.RL.PPO.num_recurrent_layers=2
 
 _C.BC = CN()
+_C.BC.USE_IW = False
 _C.BC.lr = 0.0001
 _C.BC.eps = 0.00001
 _C.BC.max_grad_norm = 0.5
@@ -177,7 +211,7 @@ _C.BC.rnn_type= 'LSTM'
 _C.BC.num_recurrent_layers=2
 _C.BC.batch_size = 4
 _C.BC.max_demo_length = 100
-_C.BC.max_epoch = 100
+_C.BC.max_epoch = 80
 _C.BC.lr_decay = 0.5
 _C.BC.num_workers = 0
 

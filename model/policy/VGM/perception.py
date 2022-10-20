@@ -355,15 +355,24 @@ class PositionEncoding(nn.Module):
         x = x + pe_tensor
         return x
 
+class LearnedPositionEncoding(nn.Embedding):
+    def __init__(self,d_model, dropout = 0.1,max_len = 800):
+        super().__init__(max_len, d_model)
+        self.dropout = nn.Dropout(p = dropout)
+
+    def forward(self, x):
+        weight = self.weight.data.unsqueeze(1) # seq_len x 1 x 512
+        x = x + weight[:x.size(0),:]
+        return self.dropout(x)
 
 class Perception(nn.Module):
-    def __init__(self,cfg):
+    def __init__(self,config):
         super(Perception, self).__init__()
         self.pe_method = 'pe' # or exp(-t)
-        self.time_embedd_size = cfg.features.time_dim
-        self.max_time_steps = cfg.TASK_CONFIG.ENVIRONMENT.MAX_EPISODE_STEPS
+        self.time_embedd_size = config.features.time_dim
+        self.max_time_steps = config.TASK_CONFIG.ENVIRONMENT.MAX_EPISODE_STEPS
         self.goal_time_embedd_index = self.max_time_steps
-        memory_dim = cfg.features.visual_feature_dim
+        memory_dim = config.features.visual_feature_dim
         self.memory_dim = memory_dim
 
         if self.pe_method == 'embedding':
@@ -373,92 +382,91 @@ class Perception(nn.Module):
         else:
             self.time_embedding = lambda t: torch.exp(-t.unsqueeze(-1)/5)
 
-        feature_dim = cfg.features.visual_feature_dim# + self.time_embedd_size
+        feature_dim = config.features.visual_feature_dim# + self.time_embedd_size
         #self.feature_embedding = nn.Linear(feature_dim, memory_dim)
-        self.feature_embedding = nn.Sequential(nn.Linear(feature_dim +  cfg.features.visual_feature_dim , memory_dim),
+        self.feature_embedding = nn.Sequential(nn.Linear(feature_dim +  config.features.visual_feature_dim , memory_dim),
                                                nn.ReLU(),
                                                nn.Linear(memory_dim, memory_dim))
         
         gn_dict = {
             "graph_norm": GraphNorm
         }
-        gn = gn_dict.get(cfg.GCN.GRAPH_NORM, nn.Identity)
+        gn = gn_dict.get(config.GCN.GRAPH_NORM, nn.Identity)
 
-        if cfg.GCN.TYPE == "GCN":
+        if config.GCN.TYPE == "GCN":
             self.global_GCN = GCN(input_dim=memory_dim, output_dim=memory_dim)
-        elif cfg.GCN.TYPE == "GAT":
+        elif config.GCN.TYPE == "GAT":
             self.global_GCN = GAT(input_dim=memory_dim, output_dim=memory_dim)
-        elif cfg.GCN.TYPE == "GATv2":
+        elif config.GCN.TYPE == "GATv2":
             self.global_GCN = GATv2(input_dim=memory_dim, output_dim=memory_dim, graph_norm=gn)
         
-        # if cfg.GCN.WITH_ENV_GLOBAL_NODE:
+        # if config.GCN.WITH_ENV_GLOBAL_NODE:
         #     self.with_env_global_node = True
-        #     self.env_global_node_respawn = cfg.GCN.RESPAWN_GLOBAL_NODE
-        #     self.randominit_env_global_node = cfg.GCN.RANDOMINIT_ENV_GLOBAL_NODE
+        #     self.env_global_node_respawn = config.GCN.RESPAWN_GLOBAL_NODE
+        #     self.randominit_env_global_node = config.GCN.RANDOMINIT_ENV_GLOBAL_NODE
         #     node_vec = torch.randn(1, memory_dim) if self.randominit_env_global_node else torch.zeros(1, memory_dim)
         #     self.env_global_node = torch.nn.parameter.Parameter(node_vec, requires_grad=False)
 
-        #     #self.env_global_node_each_proc = self.env_global_node.unsqueeze(0).repeat(cfg.NUM_PROCESSES, 1, 1) # it is a torch.Tensor, not Parameter
+        #     #self.env_global_node_each_proc = self.env_global_node.unsqueeze(0).repeat(config.NUM_PROCESSES, 1, 1) # it is a torch.Tensor, not Parameter
         # else:
         #     self.with_env_global_node = False
         
-        self.forget = cfg.memory.FORGET
-
-        forget_type_dict = {
-            'simple': 0,
-            'expire': 1
-        }
-        self.forget_type = forget_type_dict[cfg.memory.FORGETTING_TYPE.lower()]
-
-        if self.forget_type == 1:
-            self.expire_span = ExpireSpanDrop(cfg)
-            self.max_span, self.forget_mask, self.remaining_span = None, None, None
-            print('expire params: {}'.format(sum(param.numel() for param in self.expire_span.parameters())))
-        
-        self.forget_mask, self.remaining_span = None, None
-
-        self.with_transformer = "trans" in cfg.FUSION_TYPE
-
-        if self.with_transformer:
-            self.goal_Decoder = Attblock(cfg.transformer.hidden_dim,
-                                        cfg.transformer.nheads, # default to 4
-                                        cfg.transformer.dim_feedforward,
-                                        cfg.transformer.dropout)
-            self.curr_Decoder = Attblock(cfg.transformer.hidden_dim,
-                                        cfg.transformer.nheads,
-                                        cfg.transformer.dim_feedforward,
-                                        cfg.transformer.dropout)
+        self.goal_Decoder = Attblock(config.transformer.hidden_dim,
+                                    config.transformer.nheads, # default to 4
+                                    config.transformer.dim_feedforward,
+                                    config.transformer.dropout)
+        self.curr_Decoder = Attblock(config.transformer.hidden_dim,
+                                    config.transformer.nheads,
+                                    config.transformer.dim_feedforward,
+                                    config.transformer.dropout)
 
         self.output_size = feature_dim
 
-        # Flags used for ablation study
-        self.decode_global_node = cfg.transformer.DECODE_GLOBAL_NODE
-        self.link_fraction = cfg.GCN.ENV_GLOBAL_NODE_LINK_RANGE
-        self.random_replace = cfg.GCN.RANDOM_REPLACE
-        self.random_select = cfg.memory.RANDOM_SELECT
-        self.forget_rank = cfg.memory.RANK_THRESHOLD
-
-        # Roberta
+        # BERT
         self.with_unified_embedding = False
-        if cfg.transformer.with_unified_embedding:
+        if config.transformer.with_unified_embedding:
             os.environ['TOKENIZERS_PARALLELISM'] = "true"
             self.with_unified_embedding = True
 
             tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
             encoder = BertModel.from_pretrained("bert-base-multilingual-cased")
 
+<<<<<<< Updated upstream
             self.reduce = nn.Linear(768, cfg.transformer.hidden_dim)
+=======
+            self.reduce = nn.Linear(768, config.transformer.hidden_dim)
+>>>>>>> Stashed changes
             with torch.no_grad():
                 inputs = tokenizer('Go to ', return_tensors="pt")
                 outputs = encoder(**inputs)
                 self.imagenav_instruc_emb = outputs.last_hidden_state # 1 x 5 x 768
 
+<<<<<<< Updated upstream
         # if cfg.transformer.with_tesk_query:
         #     self.image_nav_query = nn.Embedding(1,cfg.transformer.hidden_dim)
+=======
+            self.task_embedding = torch.nn.Embedding(num_embeddings=1, embedding_dim=config.transformer.hidden_dim)
+
+            encoder_layer = nn.TransformerEncoderLayer(
+                config.transformer.hidden_dim,
+                config.transformer.nheads,
+                config.transformer.dim_feedforward,
+                dropout=config.transformer.dropout,
+                activation='gelu')
+            
+            self.goal_encoder = nn.TransformerEncoder(
+                encoder_layer,
+                2,
+                norm=nn.LayerNorm(config.transformer.hidden_dim))
+            
+            self.instruc_posemb = LearnedPositionEncoding(
+                d_model=config.transformer.hidden_dim,
+                dropout=config.transformer.dropout)
+        # if config.transformer.with_tesk_query:
+        #     self.image_nav_query = nn.Embedding(1,config.transformer.hidden_dim)
+>>>>>>> Stashed changes
         
-    def get_memory_span(self):
-        return self.forget_mask, self.remaining_span, self.max_span
-    
+
     def forward(self, observations, env_global_node, return_features=False, disable_forgetting=False): # without memory
         # env_global_node: b x 1 x 512
         # forgetting mechanism is enabled only when collecting trajectories and it is disabled when evaluating actions
@@ -484,32 +492,6 @@ class Perception(nn.Module):
         global_memory_with_goal = self.feature_embedding(torch.cat((global_memory[:,:max_node_num], goal_embedding.unsqueeze(1).repeat(1,max_node_num,1)),-1))
 
         # goal_attn: B x output_seq_len (1) x input_seq_len (num_nodes). NOTE: the att maps of all heads are averaged
-        if self.forget and not disable_forgetting:
-            if not self.random_select:
-                if self.forget_type == 0: # simple forgetting mechanism
-                    forget_mask = observations['forget_mask'][:,:max_node_num] # its elements are either 1 or 0. 0 means being forgotten
-                    
-                elif self.forget_type == 1: # expiring forgetting mechanism
-                    # forget_mask: B x num_nodes   its elements are float numbers in range [0,1]
-                    forget_mask, remaining_span, max_span = self.expire_span(global_memory_with_goal, relative_time) # 0 means being forgotten
-                    global_memory_with_goal = global_memory_with_goal * forget_mask.unsqueeze(-1) # multiply each node feature with its forgetting coefficient.
-                    self.forget_mask, self.remaining_span, self.max_span = forget_mask, remaining_span, max_span
-            else:
-                forget_mask = torch.ones(B, max_node_num, device=device)
-                num_forgotten = int((self.forget_rank * max_node_num).item())
-
-                for b in range(B):
-                    random_forgotten_idxs = torch.randint(0, max_node_num, size=(num_forgotten, ))
-                    forget_mask[b, random_forgotten_idxs] = 0
-            
-            forget_idxs = torch.nonzero(forget_mask==0)
-            #print("Num nodes",max_node_num, forget_idxs)
-            global_mask = torch.minimum(global_mask, forget_mask)
-            for idx in forget_idxs:
-                global_A[idx[0], idx[1], :] = 0
-                global_A[idx[0], :, idx[1]] = 0
-            # for idx in observations['forget_mask']:
-            #     global_mask[idx[0], -max_node_num + idx[1]] = 0 # this is suitable for models with or without env global nodes
 
         #t1 = time()
         if env_global_node is not None: # global node: this block takes 0.0002s
@@ -534,8 +516,8 @@ class Perception(nn.Module):
                 global_A = torch.cat([torch.ones(batch_size, 1, max_node_num, dtype=A_dtype, device=device), global_A], dim=1)
                 global_A = torch.cat([torch.ones(batch_size, max_node_num + 1, 1, dtype=A_dtype, device=device), global_A], dim=2)
             
-            if self.decode_global_node: 
-                global_mask = torch.cat([torch.ones(batch_size, 1, dtype=global_mask.dtype, device=device), global_mask], dim=1) # B x (max_num_node+1)
+
+            global_mask = torch.cat([torch.ones(batch_size, 1, dtype=global_mask.dtype, device=device), global_mask], dim=1) # B x (max_num_node+1)
 
         #print("Preparation time {:.4f}s".format(time()- t1))
 
@@ -581,19 +563,24 @@ class Perception(nn.Module):
         # the two decoding processes take 0.0018s at least and 0.0037 at most
         
         if self.with_unified_embedding:
-            instruc_emb = self.reduce(self.imagenav_instruc_emb.to(device)).repeat(B,1,1) # B x 5 x 512
-            goal_embedding = torch.cat([instruc_emb, goal_embedding.unsqueeze(1)], dim=1)
+            instruc_emb = self.reduce(self.imagenav_instruc_emb.to(device)).repeat(B,1,1) # B x seq_len x 512
+            goal_embedding = torch.cat([
+                self.task_embedding.weight[0].view(1,1,-1).repeat(B,1,1).to(device),
+                instruc_emb,
+                goal_embedding.unsqueeze(1)
+                ], dim=1) # B x (seq_len+1) x 512
+            goal_embedding = self.goal_encoder(self.instruc_posemb(goal_embedding.permute(1,0,2))).permute(1,0,2)
         else:
             goal_embedding = goal_embedding.unsqueeze(1)
-        goal_context, goal_attn = self.goal_Decoder(goal_embedding, global_context, global_mask)
+        goal_context, goal_attn = self.goal_Decoder(goal_embedding[:,0:1,:], global_context, global_mask)
         #print(global_context[0].shape, global_mask[0], goal_attn[0], );input()
         curr_context, curr_attn = self.curr_Decoder(curr_embedding.unsqueeze(1), global_context, global_mask)
         #print("decoder time {:.4f}s".format(time()- t1))
 
 
         # print(new_env_global_node[0:2,0,0:10])
-        return curr_context.squeeze(1), goal_context.mean(1), new_env_global_node, \
-            {'goal_attn': goal_attn.squeeze(1) if self.with_transformer else None,
-            'curr_attn': curr_attn.squeeze(1) if self.with_transformer else None,
+        return curr_context.squeeze(1), goal_context.squeeze(1), new_env_global_node, \
+            {'goal_attn': goal_attn.squeeze(1),
+            'curr_attn': curr_attn.squeeze(1),
             'GAT_attn': GAT_attn if GAT_attn is not None else None,
             'Adj_mat': global_A} if return_features else None

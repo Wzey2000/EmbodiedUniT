@@ -1,0 +1,46 @@
+VERSION: CNNRNN
+runner: 'CNNRNNRunner'
+scene_data: 'mp3d'
+BASE_TASK_CONFIG_PATH: "configs/vistargetnav_mp3d.yaml"
+IL_TRAINER_NAME: "BC_trainer"
+RL_TRAINER_NAME: "PPOTrainer_Memory_aux"
+ENV_NAME: "SearchEnv"
+
+SIMULATOR_GPU_ID: 0
+TORCH_GPU_ID: [0]
+
+DISTRIBUTED: True
+CUDNN:
+  BENCHMARK: True
+  DETERMINISTIC: False
+  ENABLED: True
+
+NUM_PROCESSES: 4
+NUM_VAL_PROCESSES: 0
+
+SENSORS: ["DEPTH_SENSOR", "RGB_SENSOR"]
+
+OBS_TO_SAVE: ['rgb', 'depth','goal_embedding', 'episode_info', 'target_goal', 'compass', 'gps',
+              'step', 'have_been', 'target_dist_score']
+POLICY: 'CNNRNNPolicy'
+WRAPPER: 'BaseGraphWrapper'
+
+
+REWARD_METHOD: 'progress'
+USE_AUXILIARY_INFO: False # 暂时关闭辅助任务
+USE_GPS_COMPASS: True
+STATE_ENCODER:
+  hidden_size: 512
+  num_recurrent_layers: 2
+  rnn_type: 'GRU'
+
+BC:
+  max_epoch: 25
+  USE_IW: True
+  lr: 0.001
+  eps: 1.0e-5
+  max_grad_norm: 0.2
+  max_demo_length: 100
+  batch_size: 16
+  num_workers: 0
+

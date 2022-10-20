@@ -5,8 +5,18 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-from typing import Any, List, Optional
-
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Union,
+    cast,
+)
 import attr
 import numpy as np
 from gym import spaces
@@ -15,7 +25,6 @@ from habitat.config import Config
 from habitat.core.dataset import Dataset
 from habitat.core.logging import logger
 from habitat.core.registry import registry
-from habitat.core.simulator import AgentState, Sensor, SensorTypes, RGBSensor, DepthSensor, SemanticSensor
 from habitat.core.dataset import Dataset, Episode
 from habitat.core.utils import not_none_validator
 from habitat.tasks.nav.nav import (
@@ -23,14 +32,141 @@ from habitat.tasks.nav.nav import (
     NavigationGoal,
     NavigationTask,
 )
+
+from habitat.core.simulator import (
+    AgentState,
+    Config,
+    DepthSensor,
+    Observations,
+    RGBSensor,
+    SemanticSensor,
+    Sensor,
+    SensorSuite,
+    ShortestPathPoint,
+    Simulator,
+    VisualObservation,
+)
+
+from habitat.tasks.utils import cartesian_to_polar
+from habitat.utils.geometry_utils import (
+    quaternion_from_coeff,
+    quaternion_rotate_vector)
+
+from numpy import ndarray
 import quaternion as q
-import time
+from gym.spaces.box import Box
 import torch
 # def make_panoramic(left, front, right, torch_tensor=False):
 #     if not torch_tensor: return np.concatenate([left, front, right],1)[:,1:-1]
 #     else: return torch.cat((left, front, right),1)[:,1:-1]
 import habitat_sim
-import copy
+
+class HabitatSimSensor:
+    sim_sensor_type: habitat_sim.SensorType
+    _get_default_spec = Callable[..., habitat_sim.sensor.SensorSpec]
+    _config_ignore_keys = {"height", "type", "width"}
+
+def check_sim_obs(obs: Optional[ndarray], sensor: Sensor) -> None:
+    assert obs is not None, (
+        "Observation corresponding to {} not present in "
+        "simulator's observations".format(sensor.uuid)
+    )
+
+@registry.register_sensor(name="RGBSensor")
+class HabitatSimRGBSensor(RGBSensor):
+    _get_default_spec = habitat_sim.CameraSensorSpec
+    RGBSENSOR_DIMENSION = 3
+
+    def __init__(self, config: Config, **kwargs: Any) -> None:
+        #self.sim = sim
+        #self.agent_id = config.AGENT_ID
+        self.sim_sensor_type = habitat_sim.SensorType.COLOR
+        self.sim_sensor_subtype = habitat_sim.SensorSubType.PINHOLE
+        self.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
+        self.config = config
+        super().__init__(config=config)
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any) -> Box:
+        return spaces.Box(
+            low=0,
+            high=255,
+            shape=(
+                self.config.HEIGHT,
+                self.config.WIDTH,
+                self.RGBSENSOR_DIMENSION,
+            ),
+            dtype=np.uint8,
+        )
+
+    def get_observation(
+        self, observations: Dict[str, Union[ndarray, bool, "Tensor"]],*args: Any, **kwargs: Any
+    ) -> VisualObservation:
+        obs = cast(Optional[VisualObservation], observations.get(self.uuid, None))
+        check_sim_obs(obs, self)
+
+        # remove alpha channel
+        obs = obs[:, :, : self.RGBSENSOR_DIMENSION]  # type: ignore[index]
+        return obs
+
+
+@registry.register_sensor(name="DepthSensor")
+class HabitatSimDepthSensor(DepthSensor):
+    _get_default_spec = habitat_sim.CameraSensorSpec
+    _config_ignore_keys = {
+        "max_depth",
+        "min_depth",
+        "normalize_depth",
+    }
+
+    min_depth_value: float
+    max_depth_value: float
+
+    def __init__(self, config: Config, **kwargs: Any) -> None:
+        if config.NORMALIZE_DEPTH:
+            self.min_depth_value = 0
+            self.max_depth_value = 1
+        else:
+            self.min_depth_value = config.MIN_DEPTH
+            self.max_depth_value = config.MAX_DEPTH
+        
+        #self.agent_id = config.AGENT_ID
+        self.sim_sensor_type = habitat_sim.SensorType.DEPTH
+        self.sim_sensor_subtype = habitat_sim.SensorSubType.PINHOLE
+
+        super().__init__(config=config)
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any) -> Box:
+        return spaces.Box(
+            low=self.min_depth_value,
+            high=self.max_depth_value,
+            shape=(self.config.HEIGHT, self.config.WIDTH, 1),
+            dtype=np.float32,
+        )
+
+    def get_observation(
+        self, observations: Dict[str, Union[ndarray, bool, "Tensor"]],*args: Any, **kwargs: Any
+    ) -> VisualObservation:
+        obs = cast(Optional[VisualObservation], observations.get(self.uuid, None))
+        check_sim_obs(obs, self)
+        if isinstance(obs, np.ndarray):
+            obs = np.clip(obs, self.config.MIN_DEPTH, self.config.MAX_DEPTH)
+
+            obs = np.expand_dims(
+                obs, axis=2
+            )  # make depth observation a 3D array
+        else:
+            obs = obs.clamp(self.config.MIN_DEPTH, self.config.MAX_DEPTH)  # type: ignore[attr-defined]
+
+            obs = obs.unsqueeze(-1)  # type: ignore[attr-defined]
+
+        if self.config.NORMALIZE_DEPTH:
+            # normalize depth observation to [0, 1]
+            obs = (obs - self.config.MIN_DEPTH) / (
+                self.config.MAX_DEPTH - self.config.MIN_DEPTH
+            )
+
+        return obs
+
 
 @registry.register_sensor(name="PanoramicPartRGBSensor")
 class PanoramicPartRGBSensor(RGBSensor):
@@ -244,7 +380,89 @@ class PanoramicSemanticSensor(SemanticSensor):
         return np.concatenate(depth_list,1)
 
 @registry.register_sensor(name="CustomVisTargetSensor")
-class CustomVisTargetSensor(Sensor):
+class ImageGoalSensor(Sensor):
+    r"""Sensor for ImageGoal observations which are used in ImageGoal Navigation.
+
+    RGBSensor needs to be one of the Simulator sensors.
+    This sensor return the rgb image taken from the goal position to reach with
+    random rotation.
+
+    Args:
+        sim: reference to the simulator for calculating task observations.
+        config: config for the ImageGoal sensor.
+    """
+    cls_uuid: str = "target_goal"
+
+    def __init__(
+        self, sim, config, *args: Any, **kwargs: Any
+    ):
+        self._sim = sim
+        sensors = self._sim.sensor_suite.sensors
+        rgb_sensor_uuids = [
+            uuid
+            for uuid, sensor in sensors.items()
+            if isinstance(sensor, RGBSensor)
+        ]
+        if len(rgb_sensor_uuids) != 1:
+            raise ValueError(
+                f"ImageGoalNav requires one RGB sensor, {len(rgb_sensor_uuids)} detected"
+            )
+
+        (self._rgb_sensor_uuid,) = rgb_sensor_uuids
+        self._current_episode_id: Optional[str] = None
+        self._current_image_goal = None
+        self.sim_sensor_type = habitat_sim.SensorType.COLOR
+        self.sim_sensor_subtype = habitat_sim.SensorSubType.PINHOLE
+        
+        super().__init__(config=config)
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def _get_sensor_type(self, *args: Any, **kwargs: Any):
+        return SensorTypes.COLOR
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any):
+        return self._sim.sensor_suite.observation_spaces.spaces[
+            self._rgb_sensor_uuid
+        ]
+
+    def _get_pointnav_episode_image_goal(self, episode: NavigationEpisode):
+        goals = []
+        for i in range(len(episode.goals)):
+            goal_position = np.array(episode.goals[0].position, dtype=np.float32)
+            # to be sure that the rotation is the same for the same episode_id
+            # since the task is currently using pointnav Dataset.
+            seed = abs(hash(episode.episode_id)) % (2 ** 32)
+            rng = np.random.RandomState(seed)
+            angle = rng.uniform(0, 2 * np.pi)
+            source_rotation = [0, np.sin(angle / 2), 0, np.cos(angle / 2)]
+            goal_observation = self._sim.get_observations_at(
+                position=goal_position.tolist(), rotation=source_rotation
+            )
+            goals.append(goal_observation[self._rgb_sensor_uuid])
+        return np.stack(goals)
+
+    def get_observation(
+        self,
+        observations,
+        *args: Any,
+        episode: NavigationEpisode,
+        **kwargs: Any,
+    ):
+        episode_uniq_id = f"{episode.scene_id} {episode.episode_id}"
+        if episode_uniq_id == self._current_episode_id:
+            return self._current_image_goal
+
+        self._current_image_goal = self._get_pointnav_episode_image_goal(
+            episode
+        )
+        self._current_episode_id = episode_uniq_id
+        
+        return self._current_image_goal
+
+@registry.register_sensor(name="PanoramicVisTargetSensor")
+class PanoramicVisTargetSensor(Sensor):
     def __init__(
         self, sim, config: Config, dataset: Dataset, *args: Any, **kwargs: Any
     ):
@@ -328,6 +546,127 @@ class CustomVisTargetSensor(Sensor):
                     self.goal_obs = np.array(self.goal_obs)
         return self.goal_obs
 
+
+# @registry.register_sensor
+# class HeadingSensor(Sensor):
+#     r"""Sensor for observing the agent's heading in the global coordinate
+#     frame.
+
+#     Args:
+#         sim: reference to the simulator for calculating task observations.
+#         config: config for the sensor.
+#     """
+#     cls_uuid: str = "heading"
+
+#     def __init__(
+#         self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
+#     ):
+#         self._sim = sim
+#         super().__init__(config=config)
+
+#     def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+#         return self.cls_uuid
+
+#     def _get_sensor_type(self, *args: Any, **kwargs: Any):
+#         return SensorTypes.HEADING
+
+#     def _get_observation_space(self, *args: Any, **kwargs: Any):
+#         return spaces.Box(low=-np.pi, high=np.pi, shape=(1,), dtype=np.float)
+
+#     def _quat_to_xy_heading(self, quat):
+#         direction_vector = np.array([0, 0, -1])
+
+#         heading_vector = quaternion_rotate_vector(quat, direction_vector)
+
+#         phi = cartesian_to_polar(-heading_vector[2], heading_vector[0])[1]
+#         return np.array([phi], dtype=np.float32)
+
+#     def get_observation(
+#         self, observations, episode, *args: Any, **kwargs: Any
+#     ):
+#         agent_state = self._sim.get_agent_state()
+#         rotation_world_agent = agent_state.rotation
+
+#         return self._quat_to_xy_heading(rotation_world_agent.inverse())
+
+# @registry.register_sensor(name="CompassSensor")
+# class EpisodicCompassSensor(HeadingSensor):
+#     r"""The agents heading in the coordinate frame defined by the epiosde,
+#     theta=0 is defined by the agents state at t=0
+#     """
+#     cls_uuid: str = "compass"
+
+#     def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+#         return self.cls_uuid
+
+#     def get_observation(
+#         self, observations, episode, *args: Any, **kwargs: Any
+#     ):
+#         agent_state = self._sim.get_agent_state()
+#         rotation_world_agent = agent_state.rotation
+#         rotation_world_start = quaternion_from_coeff(episode.start_rotation)
+
+#         return self._quat_to_xy_heading(
+#             rotation_world_agent.inverse() * rotation_world_start
+#         )
+
+
+# @registry.register_sensor(name="GPSSensor")
+# class EpisodicGPSSensor(Sensor):
+#     r"""The agents current location in the coordinate frame defined by the episode,
+#     i.e. the axis it faces along and the origin is defined by its state at t=0
+
+#     Args:
+#         sim: reference to the simulator for calculating task observations.
+#         config: Contains the DIMENSIONALITY field for the number of dimensions to express the agents position
+#     Attributes:
+#         _dimensionality: number of dimensions used to specify the agents position
+#     """
+#     cls_uuid: str = "gps"
+
+#     def __init__(
+#         self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
+#     ):
+#         self._sim = sim
+
+#         self._dimensionality = getattr(config, "DIMENSIONALITY", 2)
+#         assert self._dimensionality in [2, 3]
+#         super().__init__(config=config)
+
+#     def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+#         return self.cls_uuid
+
+#     def _get_sensor_type(self, *args: Any, **kwargs: Any):
+#         return SensorTypes.POSITION
+
+#     def _get_observation_space(self, *args: Any, **kwargs: Any):
+#         sensor_shape = (self._dimensionality,)
+#         return spaces.Box(
+#             low=np.finfo(np.float32).min,
+#             high=np.finfo(np.float32).max,
+#             shape=sensor_shape,
+#             dtype=np.float32,
+#         )
+
+#     def get_observation(
+#         self, observations, episode, *args: Any, **kwargs: Any
+#     ):
+#         agent_state = self._sim.get_agent_state()
+
+#         origin = np.array(episode.start_position, dtype=np.float32)
+#         rotation_world_start = quaternion_from_coeff(episode.start_rotation)
+
+#         agent_position = agent_state.position
+
+#         agent_position = quaternion_rotate_vector(
+#             rotation_world_start.inverse(), agent_position - origin
+#         )
+#         if self._dimensionality == 2:
+#             return np.array(
+#                 [-agent_position[2], agent_position[0]], dtype=np.float32
+#             )
+#         else:
+#             return agent_position.astype(np.float32)
 
 
 

@@ -1,9 +1,10 @@
 from gym.wrappers.monitor import Wrapper
 from gym.spaces.box import Box
 import torch
+from torchvision import transforms
 import numpy as np
+from copy import deepcopy
 from utils.ob_utils import log_time
-TIME_DEBUG = False
 from utils.ob_utils import batch_obs
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,12 +13,14 @@ import os
 # this wrapper comes after vectorenv
 from habitat.core.vector_env import VectorEnv
 from env_utils.env_wrapper.graph import Graph
+from utils.encoder_loaders import load_PCL_encoder, load_CRL_encoder
+
 
 # To learn the functionalities of Wrapper class, see https://hub.packtpub.com/openai-gym-environments-wrappers-and-monitors-tutorial/
 class GraphWrapper(Wrapper):
     metadata = {'render.modes': ['rgb_array']}
-    def __init__(self,envs, exp_config):
-        self.exp_config = exp_config
+    def __init__(self,envs, config):
+        self.config = config
         self.envs = envs # SearchEnv or MultiSearchEnv inherited from RLEnv inherited from gym.Env
         self.env = self.envs
         if isinstance(envs,VectorEnv):
@@ -30,19 +33,40 @@ class GraphWrapper(Wrapper):
             self.num_envs = 1
 
         self.B = self.num_envs
-        self.scene_data = exp_config.scene_data
+        self.scene_data = config.scene_data
         self.input_shape = (64, 256)
         self.feature_dim = 512
-        self.torch = exp_config.TASK_CONFIG.SIMULATOR.HABITAT_SIM_V0.GPU_GPU
-        self.torch_device = 'cuda:' + str(exp_config.TORCH_GPU_ID) if torch.cuda.device_count() > 0 else 'cpu'
+        self.torch = config.TASK_CONFIG.SIMULATOR.HABITAT_SIM_V0.GPU_GPU
+        self.torch_device = 'cuda:' + str(config.TORCH_GPU_ID) if torch.cuda.device_count() > 0 else 'cpu'
 
-        self.scene_data = exp_config.scene_data
+        self.scene_data = config.scene_data
 
         self.visual_encoder_type = 'unsupervised'
-        self.visual_encoder = self.load_visual_encoder(self.visual_encoder_type, self.input_shape, self.feature_dim).to(self.torch_device)
-        self.th = getattr(exp_config, 'graph_th', 0.75)
-        self.graph = Graph(exp_config, self.B, self.torch_device)
-        self.need_goal_embedding = 'wo_Fvis' in exp_config.POLICY
+
+        self.pretrained_type = config.memory.pretrained_type
+        if self.pretrained_type == 'PCL':
+            self.visual_encoder = load_PCL_encoder(self.feature_dim)
+        elif self.pretrained_type == 'CRL':
+            observation_space = deepcopy(self.observation_spaces[0])
+            if 'depth' in observation_space.spaces:
+                observation_space.spaces.pop('depth')
+            elif 'panoramic_depth' in observation_space.spaces:
+                observation_space.spaces.pop('panoramic_depth')
+            
+            self.trans = transforms.Compose([
+                transforms.Resize((256,256))
+            ])
+            self.visual_encoder = load_CRL_encoder(observation_space)
+        
+        self.visual_encoder.eval()
+        self.visual_encoder.to(self.torch_device)
+
+        for p in self.visual_encoder.parameters():
+            p.requires_grad = False
+        
+        self.th = getattr(config, 'graph_th', 0.75)
+        self.graph = Graph(config, self.B, self.torch_device)
+        self.need_goal_embedding = 'wo_Fvis' in config.POLICY
  
         if isinstance(envs, VectorEnv):
             for obs_space in self.observation_spaces:
@@ -58,12 +82,12 @@ class GraphWrapper(Wrapper):
                     obs_space.spaces.update(
                         {'goal_embedding': Box(low=-np.Inf, high=np.Inf, shape=(self.feature_dim,), dtype=np.float32)}
                     )                     
-        self.num_agents = exp_config.NUM_AGENTS
+        self.num_agents = config.NUM_AGENTS
         
         self.localize_mode = 'predict'
         
         # for forgetting mechanism
-        self.forget = self.exp_config.memory.FORGET and self.exp_config.memory.FORGETTING_TYPE == "simple"
+        self.forget = self.config.memory.FORGET and self.config.memory.FORGETTING_TYPE == "simple"
         self.forgetting_recorder = None
         self.forget_node_indices = None
 
@@ -83,13 +107,13 @@ class GraphWrapper(Wrapper):
         self.graph.reset(B)
 
         if self.forget:
-            self.start_to_forget = self.exp_config.memory.TOLERANCE
-            self.rank_type = self.exp_config.memory.RANK
+            self.start_to_forget = self.config.memory.TOLERANCE
+            self.rank_type = self.config.memory.RANK
             self.forgetting_recorder = torch.zeros(self.B, self.graph.M, self.start_to_forget, dtype=bool, device=self.torch_device)
             self.forget_node_indices = torch.ones(self.B, self.graph.M, device=self.torch_device)
 
             self.cur = 0
-            self.forget_th = self.exp_config.memory.RANK_THRESHOLD
+            self.forget_th = self.config.memory.RANK_THRESHOLD
             
     def is_close(self, embed_a, embed_b, return_prob=False):
         with torch.no_grad():
@@ -211,13 +235,19 @@ class GraphWrapper(Wrapper):
 
     def embed_obs(self, obs_batch):
         with torch.no_grad():
-            img_tensor = torch.cat((obs_batch['panoramic_rgb']/255.0, obs_batch['panoramic_depth']),3).permute(0,3,1,2)
+            if self.pretrained_type == 'PCL':
+                img_tensor = torch.cat((obs_batch['panoramic_rgb']/255.0, obs_batch['panoramic_depth']),3).permute(0,3,1,2)
+            elif self.pretrained_type == 'CRL':
+                img_tensor = self.trans(obs_batch['panoramic_rgb'].permute(0,3,1,2)/255.0)
+            
             vis_embedding = nn.functional.normalize(self.visual_encoder(img_tensor).view(self.B,-1),dim=1)
         return vis_embedding.detach()
 
     def embed_target(self, obs_batch):
         with torch.no_grad():
             img_tensor = obs_batch['target_goal'].permute(0,3,1,2)
+
+            print('embed_target',img_tensor.shape)
             vis_embedding = nn.functional.normalize(self.visual_encoder(img_tensor).view(self.B,-1),dim=1)
         return vis_embedding.detach()
 
@@ -232,7 +262,6 @@ class GraphWrapper(Wrapper):
         return obs_batch
 
     def step(self, actions):
-
         if self.is_vector_env:
             dict_actions = [{'action': actions[b]} for b in range(self.B)]
             outputs = self.envs.step(dict_actions)

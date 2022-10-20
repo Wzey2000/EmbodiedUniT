@@ -54,6 +54,7 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
         sensor_suites = []
         self.num_agents = len(self.habitat_config.AGENTS)
         agent_config = self._get_agent_config()
+
         sim_sensors = []
         for sensor_name in agent_config.SENSORS:
             sensor_cfg = getattr(self.habitat_config, sensor_name)
@@ -145,7 +146,7 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
                         config_from=sensor.config, config_to=sim_sensor_cfg,
                         ignore_keys={
                             "height",
-                            # "hfov",
+                            "hfov",
                             "max_depth",
                             "min_depth",
                             "normalize_depth",
@@ -212,7 +213,6 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
     def step(self, action) -> Observations:
 
         sim_obs = super().step(action)
-        #print(time.time() - s)
         self._prev_sim_obs = sim_obs
         observations = self._sensor_suite.get_observations(sim_obs)
         return observations

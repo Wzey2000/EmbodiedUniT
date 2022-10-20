@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from model.rnn_state_encoder import RNNStateEncoder
-from habitat_baselines.common.utils import CategoricalNet
+from habitat_baselines.utils.common import CategoricalNet
 from model.resnet import resnet
 from model.resnet.resnet import ResNetEncoder
 from .perception import Perception
@@ -70,15 +70,16 @@ class VGMPolicy(nn.Module):
             observations, rnn_hidden_states, prev_actions, masks, env_global_node, return_features=return_features
         )
 
-        distribution, x = self.action_distribution(features)
+        distribution = self.action_distribution(features)
+        x = distribution.logits
         value = self.critic(features) # uses a FC layer to map features to a scalar value of size num_processes x 1
         if deterministic:
             action = distribution.mode()
         else:
             action = distribution.sample()
 
+        action = action.squeeze(-1)
         action_log_probs = distribution.log_probs(action)
-        
         # The shape of the output should be B * N * (shapes)
         # NOTE: change distribution_entropy to x
         return value, action, action_log_probs, rnn_hidden_states, new_env_global_node, x, preds, ffeatures if return_features else None
@@ -100,7 +101,8 @@ class VGMPolicy(nn.Module):
         features, rnn_hidden_states, preds, env_global_node, _ = self.net(
             observations, rnn_hidden_states, prev_actions, masks, env_global_node, disable_forgetting=True
         )
-        distribution, x = self.action_distribution(features)
+        distribution = self.action_distribution(features)
+        x = distribution.logits
         value = self.critic(features)
 
         action_log_probs = distribution.log_probs(action)
@@ -306,6 +308,7 @@ class VGMNet(nn.Module):
 
         input_list = [observations['panoramic_rgb'].permute(0, 3, 1, 2) / 255.0,
                       observations['panoramic_depth'].permute(0, 3, 1, 2)]
+        
         curr_tensor = torch.cat(input_list, 1)
         observations['curr_embedding'] = self.visual_encoder(curr_tensor).view(curr_tensor.shape[0], -1) # B x 512
 

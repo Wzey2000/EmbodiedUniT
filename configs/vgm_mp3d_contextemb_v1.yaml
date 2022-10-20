@@ -6,7 +6,7 @@ IL_TRAINER_NAME: "BC_trainer"
 RL_TRAINER_NAME: "PPOTrainer_Memory_aux"
 ENV_NAME: "SearchEnv"
 
-SIMULATOR_GPU_ID: 5
+SIMULATOR_GPU_ID: 6
 TORCH_GPU_ID: 5
 
 NUM_PROCESSES: 4
@@ -27,14 +27,6 @@ WRAPPER: 'GraphWrapper'
 GCN:
   TYPE: "GCN"
 
-memory:
-  FORGET: False
-  FORGETTING_TYPE: "simple"
-  FORGETTING_ATTN: "goal" # "goal", "cur", "global_node"
-  RANK: "bottom" # "top", "bottom"
-  RANK_THRESHOLD: 0.8
-  TOLERANCE: 1
-
 transformer:
   with_unified_embedding: True
 
@@ -52,6 +44,6 @@ RL:
   PPO:
     num_mini_batch: 2
     num_steps: 256
-    rl_pretrained: False
+    rl_pretrained: True
     il_pretrained: False
-    pretrained_weights: "./data/new_checkpoints/vgm_mp3d_test_IL/epoch0014iter12500.pt"
+    pretrained_weights: "./data/new_checkpoints/vgm_mp3d_contextemb_v1_RL/ckpt57_frame11674624.pth"

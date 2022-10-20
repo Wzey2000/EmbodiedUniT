@@ -16,12 +16,12 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from habitat import Config, logger
 from habitat_baselines.common.base_trainer import BaseRLTrainer
-from habitat_baselines.common.baseline_registry import baseline_registry
+from embodiedunit_baselines.common.baseline_registry import baseline_registry
 from env_utils.make_env_utils import construct_envs
 from env_utils import *
-from habitat_baselines.common.rollout_storage import RolloutStorage
+from embodiedunit_baselines.common.rollout_storage import RolloutStorage
 from habitat_baselines.common.tensorboard_utils import TensorboardWriter
-from habitat_baselines.common.utils import (
+from embodiedunit_baselines.common.utils import (
     batch_obs,
     linear_decay,
 )
@@ -325,6 +325,7 @@ class PPOTrainer_Memory(BaseRLTrainer):
                 self.last_env_global_node,
                 return_features = self.simple_forget # The simple forgetting mechnism requires att scores to determine which fraction of nodes should be forgotten
             )
+
         pth_time += time.time() - t_sample_action
 
         t_step_env = time.time()

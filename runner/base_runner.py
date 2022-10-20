@@ -11,7 +11,6 @@ from model.policy import *
 class BaseRunner(nn.Module):
     def __init__(self, config, return_features=False):
         super().__init__()
-        super().__init__()
         observation_space = SpaceDict({
             'panoramic_rgb': Box(low=0, high=256, shape=(64, 256, 3), dtype=np.float32),
             'target_goal': Box(low=0, high=256, shape=(64, 256, 3), dtype=np.float32),
@@ -24,13 +23,9 @@ class BaseRunner(nn.Module):
         agent = eval(config.POLICY)(
             observation_space=observation_space,
             action_space=action_space,
-            hidden_size=config.features.hidden_size,
-            rnn_type=config.features.rnn_type,
-            num_recurrent_layers=config.features.num_recurrent_layers,
-            backbone=config.features.backbone,
-            goal_sensor_uuid=config.TASK_CONFIG.TASK.GOAL_SENSOR_UUID,
+            no_critic=True,
             normalize_visual_inputs=True,
-            cfg=config
+            config=config
         )
         self.agent = agent
         self.torch_device = 'cuda'

@@ -22,6 +22,47 @@ def make_env_fn(
     env.seed(rank)
     return env
 
+def add_camera(task_config, normalize_depth=True, has_target=True):
+    camera_config = task_config.SIMULATOR.RGB_SENSOR.clone()
+    camera_config.TYPE = "RGBSensor"
+    task_config.SIMULATOR.update({"RGB_SENSOR": camera_config})
+    sensors = ["RGB_SENSOR"]
+
+    sensor_dict = {'TYPE': 'RGBSensor', 'WIDTH': task_config.SIMULATOR.RGB_SENSOR.WIDTH,
+                 'HEIGHT': task_config.SIMULATOR.RGB_SENSOR.HEIGHT, 'NUM_CAMERA': 1,
+                 'AGENT_ID': '0'}
+    task_config.TASK['RGB_SENSOR'] = habitat.Config()
+    task_config.TASK['RGB_SENSOR'].update(sensor_dict)
+    sensors_with_ids = ["RGB_SENSOR"]
+
+    use_depth = 'DEPTH_SENSOR' in task_config.TASK.SENSORS
+    if use_depth:
+        new_depth_camera_config = task_config.SIMULATOR.DEPTH_SENSOR.clone()
+        new_depth_camera_config.TYPE = "DepthSensor"
+        new_depth_camera_config.NORMALIZE_DEPTH = normalize_depth
+        task_config.SIMULATOR.update({'DEPTH_SENSOR': new_depth_camera_config})
+        sensors.append('DEPTH_SENSOR')
+
+    task_config.SIMULATOR.AGENT_0.SENSORS = sensors
+
+    if has_target:
+        task_config.TASK.SENSORS = sensors_with_ids + ['CUSTOM_VISTARGET_SENSOR']
+        task_config.TASK.CUSTOM_VISTARGET_SENSOR = habitat.Config()
+        task_config.TASK.CUSTOM_VISTARGET_SENSOR.TYPE = 'CustomVisTargetSensor'
+        task_config.TASK.CUSTOM_VISTARGET_SENSOR.NUM_CAMERA = 1
+        task_config.TASK.CUSTOM_VISTARGET_SENSOR.WIDTH = task_config.SIMULATOR.RGB_SENSOR.WIDTH
+        task_config.TASK.CUSTOM_VISTARGET_SENSOR.HEIGHT = task_config.SIMULATOR.RGB_SENSOR.HEIGHT
+    else:
+        task_config.TASK.SENSORS.remove('CUSTOM_VISTARGET_SENSOR')
+
+    task_config.TASK.SUCCESS = habitat.Config()
+    if "STOP" not in task_config.TASK.POSSIBLE_ACTIONS:
+        task_config.TASK.SUCCESS.TYPE = "Success_woSTOP"
+    else:
+        task_config.TASK.SUCCESS.TYPE = "Success"
+    task_config.TASK.SUCCESS.SUCCESS_DISTANCE = task_config.TASK.SUCCESS_DISTANCE
+    task_config.TASK.DISTANCE_TO_GOAL.TYPE = 'Custom_DistanceToGoal'
+    return task_config
 
 def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
     num_of_camera = 360//task_config.SIMULATOR.RGB_SENSOR.HFOV
@@ -62,7 +103,10 @@ def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
             sensors.append('SEMANTIC_SENSOR_{}'.format(camera_idx))
 
     task_config.SIMULATOR.AGENT_0.SENSORS = sensors
-    sensor_dict = {'TYPE': 'PanoramicRGBSensor', 'WIDTH': task_config.SIMULATOR.RGB_SENSOR.HEIGHT * 4,
+    # sensor_dict = {'TYPE': 'PanoramicRGBSensor', 'WIDTH': task_config.SIMULATOR.RGB_SENSOR.HEIGHT * 4,
+    #              'HEIGHT': task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT, 'NUM_CAMERA': num_of_camera,
+    #              'AGENT_ID': str(id)}
+    sensor_dict = {'TYPE': 'PanoramicRGBSensor', 'WIDTH': task_config.SIMULATOR.RGB_SENSOR.HEIGHT,
                  'HEIGHT': task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT, 'NUM_CAMERA': num_of_camera,
                  'AGENT_ID': str(id)}
     task_config.TASK['PANORAMIC_SENSOR'] = habitat.Config()
@@ -84,7 +128,8 @@ def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
         task_config.TASK.CUSTOM_VISTARGET_SENSOR = habitat.Config()
         task_config.TASK.CUSTOM_VISTARGET_SENSOR.TYPE = 'CustomVisTargetSensor'
         task_config.TASK.CUSTOM_VISTARGET_SENSOR.NUM_CAMERA = num_of_camera
-        task_config.TASK.CUSTOM_VISTARGET_SENSOR.WIDTH = task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT * 4
+        # task_config.TASK.CUSTOM_VISTARGET_SENSOR.WIDTH = task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT * 4
+        task_config.TASK.CUSTOM_VISTARGET_SENSOR.WIDTH = task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT
         task_config.TASK.CUSTOM_VISTARGET_SENSOR.HEIGHT = task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT
     else:
         task_config.TASK.SENSORS.remove('CUSTOM_VISTARGET_SENSOR')
@@ -100,7 +145,6 @@ def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
 
 from env_utils.env_wrapper import *
 def construct_envs(config,env_class, mode='vectorenv', make_env_fn=make_env_fn, run_type='train', no_val=False, fix_on_cpu=False):
-
     num_processes, num_val_processes = config.NUM_PROCESSES, config.NUM_VAL_PROCESSES
     total_num_processes = num_processes + num_val_processes
     if no_val: num_val_processes = 0
@@ -159,6 +203,13 @@ def construct_envs(config,env_class, mode='vectorenv', make_env_fn=make_env_fn, 
 
     assert sum(map(len, scene_splits)) == len(training_scenes+eval_scenes)
 
+    # Check whether panoramas are used
+    use_panorama = False
+    for sensor_type in config.TASK_CONFIG.TASK.SENSORS:
+        if 'pano' in sensor_type.lower():
+            use_panorama = True
+            break
+
     for i in range(total_num_processes):
         proc_config = config.clone()
         proc_config.defrost()
@@ -167,9 +218,14 @@ def construct_envs(config,env_class, mode='vectorenv', make_env_fn=make_env_fn, 
         task_config.DATASET.SPLIT = 'train' if i < num_processes else 'val'
         if len(training_scenes) > 0:
             task_config.DATASET.CONTENT_SCENES = scene_splits[i]
-        task_config = add_panoramic_camera(task_config,
+        
+        print("\033[0;33;40m[make_env_utils.py] The agent uses panorama:{}\033[0m\n".format(use_panorama))
+        if use_panorama:
+            task_config = add_panoramic_camera(task_config,
                                            has_target='search' in proc_config.ENV_NAME.lower() or getattr(proc_config,'TASK_TYPE', True))
-
+        else:
+            task_config = add_camera(task_config, has_target='search' in proc_config.ENV_NAME.lower() or getattr(proc_config,'TASK_TYPE', True))
+        
         task_config.SIMULATOR.HABITAT_SIM_V0.GPU_DEVICE_ID = (
             config.SIMULATOR_GPU_ID
         )
@@ -177,7 +233,7 @@ def construct_envs(config,env_class, mode='vectorenv', make_env_fn=make_env_fn, 
 
         proc_config.freeze()
         configs.append(proc_config)
-
+    mode = 'threaded_vectorenv'
     if mode == 'vectorenv':
         envs = habitat.VectorEnv(
             make_env_fn=make_env_fn,
@@ -185,9 +241,16 @@ def construct_envs(config,env_class, mode='vectorenv', make_env_fn=make_env_fn, 
                 tuple(zip(configs, env_classes, range(total_num_processes), [{'run_type':run_type}]*total_num_processes))
             ),
         )
-
+        print('\033[0;33;40m[make_env_utils] Env type: {}, Env Wrapper type: {}\033[0m\n'.format(habitat.VectorEnv, configs[0].WRAPPER))
+    elif mode == 'threaded_vectorenv':
+        envs = habitat.ThreadedVectorEnv(
+            make_env_fn=make_env_fn,
+            env_fn_args=tuple(
+                tuple(zip(configs, env_classes, range(total_num_processes), [{'run_type':run_type}]*total_num_processes))
+            ),
+        )
         envs = eval(configs[0].WRAPPER)(envs, configs[0])
-        print('[make_env_utils] Using Vector Env Wrapper - ', configs[0].WRAPPER)
+        print('\033[0;33;40m[make_env_utils] Env type: {}, Env Wrapper type: {}\033[0m\n'.format(habitat.ThreadedVectorEnv, configs[0].WRAPPER))
     else:
         envs = make_env_fn(configs[0] ,env_class, 0, { 'run_type': run_type})
     return envs

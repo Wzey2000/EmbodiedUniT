@@ -6,20 +6,26 @@
 
 import json
 import os
-from typing import Any, Dict, List, Optional
-
-from habitat.config import Config
-from habitat.core.registry import registry
-from habitat.datasets.pointnav.pointnav_dataset import (
+from typing import Any, Dict, List, Optional, Sequence
+import attr
+from custom_habitat.config import Config
+from custom_habitat.core.registry import registry
+from custom_habitat.datasets.pointnav.pointnav_dataset import (
     CONTENT_SCENES_PATH_FIELD,
     DEFAULT_SCENE_PATH_PREFIX,
     PointNavDatasetV1,
 )
-from habitat.tasks.nav.nav import (
-    NavigationEpisode,
-    NavigationGoal,
-    ShortestPathPoint,
-)
+from custom_habitat.core.simulator import AgentState, Sensor, SensorTypes
+from custom_habitat.core.utils import not_none_validator, DatasetFloatJSONEncoder
+
+# from habitat.tasks.nav.nav import (
+#     NavigationEpisode,
+#     NavigationGoal,
+#     ShortestPathPoint,
+# )
+from custom_habitat.tasks.nav.nav import ImageGoal, NavigationGoal, NavigationEpisode, AgentStateSpec, ReplayActionSpec
+
+
 
 @registry.register_dataset(name="VisTargetNav-v1")
 class VisTargetNavDatasetV1(PointNavDatasetV1):
@@ -55,4 +61,72 @@ class VisTargetNavDatasetV1(PointNavDatasetV1):
             #        for p_index, point in enumerate(path):
             #            path[p_index] = ShortestPathPoint(**point)
             self.episodes.append(episode)
+
+
+@registry.register_dataset(name="ImageNav-v1")
+class ImageNavDatasetV1(PointNavDatasetV1):
+    r"""Class inherited from PointNavDataset that loads Object Navigation dataset."""
+    episodes: List[NavigationEpisode] = []  # type: ignore
+    content_scenes_path: str = "{data_path}/content/{scene}.json.gz"
+
+    def __init__(self, config: Optional[Config] = None) -> None:
+        self.max_replay_steps = config.MAX_REPLAY_STEPS
+        super().__init__(config)
+        self.episodes = list(self.episodes)
+
+    def from_json(
+        self, json_str: str, scenes_dir: Optional[str] = None
+    ) -> None:
+        deserialized = json.loads(json_str)
+        if CONTENT_SCENES_PATH_FIELD in deserialized:
+            self.content_scenes_path = deserialized[CONTENT_SCENES_PATH_FIELD]
+
+        for episode in deserialized["episodes"]:
+            replay = episode['reference_replay']
+            if len(replay) > self.max_replay_steps:
+                continue
+
+            for k in ['object_category', 'is_thda', 'scene_state', 'scene_dataset']:
+                if k in episode.keys():
+                    del episode[k]
+
+            episode = NavigationEpisode(**episode)
+            # episode.episode_id = str(i)
+
+            if scenes_dir is not None:
+                if episode.scene_id.startswith(DEFAULT_SCENE_PATH_PREFIX):
+                    episode.scene_id = episode.scene_id[
+                        len(DEFAULT_SCENE_PATH_PREFIX) :
+                    ]
+
+                episode.scene_id = os.path.join(scenes_dir, episode.scene_id)
+
+            # Only handle single-goal tasks
+            episode.goals = [
+                ImageGoal(
+                    position = replay[-1]["agent_state"]["position"],
+                    rotation = replay[-1]["agent_state"]["rotation"])
+            ]
+
+            for i, replay_step in enumerate(replay):
+                # replay_step["agent_state"] = AgentStateSpec(**replay_step["agent_state"])
+                replay_step["agent_state"] = AgentStateSpec(
+                    position=replay_step["agent_state"]["position"],
+                    rotation=replay_step["agent_state"]["rotation"]
+                    )
+                replay[i] = ReplayActionSpec(**replay_step)
+
+            # if episode.shortest_paths is not None:
+            #     for path in episode.shortest_paths:
+            #         for p_index, point in enumerate(path):
+            #             if point is None or isinstance(point, (int, str)):
+            #                 point = {
+            #                     "action": point,
+            #                     "rotation": None,
+            #                     "position": None,
+            #                 }
+
+            #             path[p_index] = ShortestPathPoint(**point)
+            
+            self.episodes.append(episode)  # type: ignore [attr-defined]
 

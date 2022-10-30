@@ -13,27 +13,27 @@ import numpy as np
 from gym import spaces
 
 from collections import defaultdict
-from habitat.core.logging import logger
-from habitat.config import Config
-from habitat.core.embodied_task import EmbodiedTask
-from habitat.core.registry import registry
-from habitat.core.simulator import Observations, Sensor, Simulator, SensorTypes
-from habitat.core.utils import not_none_validator
-from habitat.tasks.nav.nav import (
+from custom_habitat.core.logging import logger
+from custom_habitat.config import Config
+from custom_habitat.core.embodied_task import EmbodiedTask
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import Observations, Sensor, Simulator, SensorTypes
+from custom_habitat.core.utils import not_none_validator
+from custom_habitat.tasks.nav.nav import (
     merge_sim_episode_config,
     DistanceToGoal,
     TopDownMap,
     EpisodicGPSSensor,
     PointGoalSensor
 )
-from habitat.core.dataset import Dataset, Episode
-from habitat.core.embodied_task import SimulatorTaskAction, Measure
-from habitat.sims.habitat_simulator.actions import (
+from custom_habitat.core.dataset import Dataset, Episode
+from custom_habitat.core.embodied_task import SimulatorTaskAction, Measure
+from custom_habitat.sims.habitat_simulator.actions import (
     HabitatSimActions,
     HabitatSimV1ActionSpaceConfiguration,
 )
-from habitat.tasks.utils import get_habitat_sim_action, get_habitat_sim_action_str
-from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
+from custom_habitat.tasks.utils import get_habitat_sim_action, get_habitat_sim_action_str
+from custom_habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
 
 
 task_cat2mpcat40 = [

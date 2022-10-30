@@ -1,8 +1,8 @@
-# Embodied Multi-task Learning for Visual Navigation
+# EmbodiedUNIT: Embodied Multi-task Learning for Visual Navigation
 <!-- This repository is the official implementation of [MemoNav](https://arxiv.org/abs/2030.12345).  -->
 
 
-![Model overview](./assets/Main_Model.png)
+<!-- ![Model overview](./assets/Main_Model.png) -->
 
 ## Requirements
 The source code is developed and tested in the following setting. 
@@ -15,38 +15,60 @@ Please refer to [habitat-sim](https://github.com/facebookresearch/habitat-sim.gi
 
 To install requirements:
 
-```setup
+```
 pip install -r requirements.txt
 ```
 
-## Scene Data Setup
+## Data Setup
+### Scene Datasets
 The scene datasets and task datasets used for training should be organized in the habitat-lab directory as follows:
 ```
 habitat-api (or habitat-lab)
   └── data
-      └── datasets
-      │   └── pointnav
-      │       └── gibson
-      │           └── v1
-      │               └── train
-      │               └── val
       └── scene_datasets
           └── gibson_habitat
               └── *.glb, *.navmeshs  
 ```
 
-## Training and Validation Data Setup
-Our datasets originate from [the Habitat-Web human demonstration dataset](https://github.com/Ram81/habitat-imitation-baselines#downloading-human-demonstrations-dataset), which is used for ObjectNav. We transform the target format from object category to image in this dataset to generate ImageNav training datasets.
-
-```collect the ImageNav dataset
-python collect_ImageNav_IL_data.py --split train/val --traj-dir path/to/Habitat_web/datasets/objectnav/objectnav_mp3d_70k/train/content  --data-dir [where to save]
+Then modify the task configuration file as follows so that the Habitat simulator can load these datasets:
+```
+In vistargetnav_mp3d.yaml:
+SCENES_DIR: "Your_habitat_lab_dir/data/scene_datasets"
 ```
 
-```collect the ObjectNav dataset
-python collect_ObjectNav_IL_data.py  --split train/val --traj-dir path/to/Habitat_web/datasets/objectnav/objectnav_mp3d_70k/train/content  --data-dir [where to save]
+## Training and Evaluation Dataset Setup
+```
+habitat-api (or habitat-lab)
+  └── data
+      └── datasets
+      │   └── pointnav
+      │   |   └── gibson
+      │   |       └── v1
+      │   |           └── train
+      │   |           └── val
+      |   └── objectnav
+      |   │       └── objectnav_mp3d_70k
+      |   │           └── sample
+      |   │           └── train
+      |   │           └── val
+      |   └── imagenav
+      └── scene_datasets
 ```
 
-## Multi-goal Testing Data Setup
+### ImageNav
+ImageNav datasets originate from [the Habitat-Web human demonstration dataset](https://github.com/Ram81/habitat-imitation-baselines#downloading-human-demonstrations-dataset), which is originally used for ObjectNav. We transform the target format from object category to image in this dataset to generate ImageNav training datasets.
+
+
+Then modify the task configuration file as follows so that the Habitat simulator can load these datasets:
+```
+In ./configs/vistargetnav_mp3d.yaml:
+DATA_PATH: "Your_habitat_lab_dir/data/datasets/objectnav/objectnav_mp3d_70k/{split}/{split}.json.gz"
+```
+
+### ObjectNav
+We use [the Habitat-web 70k demonstrations](https://habitat-on-web.s3.amazonaws.com/release/datasets/objectnav/objectnav_mp3d_70k.zip) for training and [this official dataset](https://dl.fbaipublicfiles.com/habitat/data/datasets/objectnav/m3d/v1/objectnav_mp3d_v1.zip) for evaluation.
+
+<!-- ## Multi-goal Testing Data Setup
 ### ImageNav
 The single and multi-goal train/val datasets for ImageNav should be organized as follows:
 ```
@@ -68,49 +90,50 @@ This repo
         └── 4goal
             └── *.json.gz
       
-```
+``` -->
 
-### ObjectNav
-We use [the Multi-ON](https://github.com/saimwani/multiON) for ObjectNav.
+<!-- ### ObjectNav
+We use [the Multi-ON](https://github.com/saimwani/multiON) for ObjectNav. -->
 
 ## Training
-The EML is trained using Imitation Learning.
+### Model Definition
+The policy used in this project is the CNNRNN used in the Habitat-web paper and adapted for ImageNav tasks.
+
+Every navigation policy needs to be defined in ```./model/policy``` and must contains a class method named ```def act(self, *args)```. This policy class also needs to be imported in ```./custom_habitat_baselines/il/env_based/il_trainer.py```.
+To specify the policy class you wiil use, please modify the entry called ```POLICY: ***``` in your model configuration file in the ```configs``` directory.
 
 
-```train on a single GPU
-python train_bc.py --config  ./configs/CNNRNN/CNNRNN.yaml --stop
+### Simulator Settings
+The navigation environment is defined in ```./env_utils/task_search_env.py```.
+The agent's sensors, actions, tasks, and goals are defined in ```./custom_habitat/tasks/nav/nav.py```.
+
+### Training Pipeline
+The imitation learning pipieline is defined in ```./custom_habitat_baselines/il/env_based/il_trainer.py```
+
+Use this command to train an agent in ImageNav tasks:
+```
+python run.py --cfg ./configs/CNNRNN/CNNRNN_woPose_envbased.yaml
 ```
 
-```train on multiple GPUs
+
+<!-- ```train on multiple GPUs
 python -m torch.distributed.launch --nnodes=1 --nproc_per_node=[GPU_num] train_bc.py --config ./configs/CNNRNN/CNNRNN.yaml --stop
-```
+``` -->
 
 ## Evaluation
 
-To evaluate the model on the single-goal dataset, run:
-
-```eval
- python evaluate_dataset.py --config ./configs/CNNRNN/CNNRNN.yaml --stop --diff hard --dataset gibson --split val --eval-ckpt ./data/new_checkpoints/CNNRNN_IL/epoch0006iter00270.pt --gpu 3,3 --version <exp_name>
-
-```
-
-To evaluate the model on the multi-goal dataset, run:
-
-```eval
-python evaluate_dataset.py  --config ./configs/GATv2_EnvGlobalNode_Respawn_ILRL.yaml  --eval-ckpt *.pth --stop --dataset mp3d --split test --diff 3goal --gpu 0,0 --forget --version <exp_name>
-
-```
+TODO
 
 
 ## Pre-trained Models
-
+TODO
 <!-- You can download pretrained models here:
 
 - [Memonav model](https://zjueducn-my.sharepoint.com/:u:/g/personal/hongxin_li_zju_edu_cn/EVHGjFj4db9GiblAcCrTh1kBF78FpMW2-X7HUHrGsmXOZg?e=DSPnb5) trained on Gibson scene datasets.  -->
 
 
 ## Results
-
+TODO
 <!-- Our model achieves the following performance on:
 
 ### [Gibson single-goal test dataset](https://github.com/facebookresearch/image-goal-nav-dataset)

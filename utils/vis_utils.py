@@ -7,13 +7,13 @@ import imageio
 import numpy as np
 import tqdm
 
-from habitat.core.logging import logger
-from habitat.core.utils import try_cv2_import
-from habitat.utils.visualizations import maps
+from custom_habitat.core.logging import logger
+from custom_habitat.core.utils import try_cv2_import
+from custom_habitat.utils.visualizations import maps
 import cv2
 import matplotlib.pyplot as plt
 import scipy
-from habitat.utils.visualizations import utils
+from custom_habitat.utils.visualizations import utils
 
 agent_colors = ['red','blue', 'yellow', 'green']
 AGENT_IMGS = []

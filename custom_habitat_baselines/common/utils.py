@@ -13,8 +13,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from habitat.utils.visualizations.utils import images_to_video
-from habitat_baselines.common.tensorboard_utils import TensorboardWriter
+from custom_habitat.utils.visualizations.utils import images_to_video
+from custom_habitat_baselines.common.tensorboard_utils import TensorboardWriter
 from torch.distributions.categorical import Categorical
 
 class Flatten(nn.Module):

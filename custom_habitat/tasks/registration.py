@@ -4,12 +4,12 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from habitat.core.logging import logger
-from habitat.core.registry import registry
-from habitat.tasks.eqa import _try_register_eqa_task
-from habitat.tasks.nav import _try_register_nav_task
-from habitat.tasks.vln import _try_register_vln_task
-from habitat.tasks.pickplace import _try_register_pickplace_task
+from custom_habitat.core.logging import logger
+from custom_habitat.core.registry import registry
+# from custom_habitat.tasks.eqa import _try_register_eqa_task
+from custom_habitat.tasks.nav import _try_register_nav_task
+# from custom_habitat.tasks.vln import _try_register_vln_task
+# from custom_habitat.tasks.pickplace import _try_register_pickplace_task
 
 
 def make_task(id_task, **kwargs):
@@ -22,7 +22,7 @@ def make_task(id_task, **kwargs):
     return _task(**kwargs)
 
 
-_try_register_eqa_task()
+#_try_register_eqa_task()
 _try_register_nav_task()
-_try_register_vln_task()
-_try_register_pickplace_task()
+# _try_register_vln_task()
+# _try_register_pickplace_task()

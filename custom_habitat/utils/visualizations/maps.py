@@ -11,11 +11,11 @@ import imageio
 import numpy as np
 import scipy.ndimage
 
-from habitat.core.utils import try_cv2_import
-from habitat.utils.visualizations import utils
+from custom_habitat.core.utils import try_cv2_import
+from custom_habitat.utils.visualizations import utils
 
 try:
-    from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
+    from custom_habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
 except ImportError:
     pass
 

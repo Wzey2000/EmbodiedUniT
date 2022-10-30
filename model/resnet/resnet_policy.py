@@ -13,18 +13,18 @@ from gym import spaces
 from torch import nn as nn
 from torch.nn import functional as F
 
-from habitat.config import Config
-from habitat.tasks.nav.nav import (
+from custom_habitat.config import Config
+from custom_habitat.tasks.nav.nav import (
     EpisodicCompassSensor,
     EpisodicGPSSensor,
     HeadingSensor,
     ImageGoalSensor,
     IntegratedPointGoalGPSAndCompassSensor,
     PointGoalSensor,
+    ObjectGoalSensor,
     ProximitySensor,
 )
-from habitat.tasks.nav.object_nav_task import ObjectGoalSensor
-from habitat_baselines.common.baseline_registry import baseline_registry
+from custom_habitat_baselines.common.baseline_registry import baseline_registry
 #from habitat_baselines.rl.ddppo.policy import resnet
 from model.resnet import resnet
 from model.resnet.running_mean_and_var import RunningMeanAndVar

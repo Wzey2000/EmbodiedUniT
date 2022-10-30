@@ -10,8 +10,8 @@ from typing import Optional, Union
 import numpy as np
 
 import habitat_sim
-from habitat.sims.habitat_simulator.actions import HabitatSimActions
-from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
+from custom_habitat.sims.habitat_simulator.actions import HabitatSimActions
+from custom_habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
 
 
 def action_to_one_hot(action: int) -> np.array:

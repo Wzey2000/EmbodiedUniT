@@ -18,9 +18,9 @@ if TYPE_CHECKING:
     from torch import Tensor
 import os
 import habitat_sim
-from habitat.core.dataset import Episode
-from habitat.core.registry import registry
-from habitat.core.simulator import (
+from custom_habitat.core.dataset import Episode
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import (
     AgentState,
     Config,
     DepthSensor,
@@ -33,10 +33,8 @@ from habitat.core.simulator import (
     Simulator,
     VisualObservation,
 )
-from habitat.core.spaces import Space
-from habitat.sims.habitat_simulator.habitat_simulator import overwrite_config#, HabitatSimVizSensors
-RGBSENSOR_DIMENSION = 3
-import time
+from custom_habitat.core.spaces import Space
+from custom_habitat.sims.habitat_simulator.habitat_simulator import overwrite_config#, HabitatSimVizSensors
 
 
 @registry.register_simulator(name="Sim-0")
@@ -58,6 +56,7 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
         sim_sensors = []
         for sensor_name in agent_config.SENSORS:
             sensor_cfg = getattr(self.habitat_config, sensor_name)
+
             sensor_type = registry.get_sensor(sensor_cfg.TYPE)
             assert sensor_type is not None, "invalid sensor type {}".format(
                 sensor_cfg.TYPE
@@ -85,7 +84,7 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
         overwrite_config(
             config_from=self.habitat_config.HABITAT_SIM_V0,
             config_to=sim_config,
-            ignore_keys={"gpu_gpu"}
+            #ignore_keys={"gpu_gpu"}
         )
         if not hasattr(sim_config, "scene_id"):
             sim_config.scene.id = self.habitat_config.SCENE
@@ -97,31 +96,32 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
             agent_config = habitat_sim.AgentConfiguration()
             overwrite_config(
                 config_from=self._get_agent_config(id), config_to=agent_config,
-                ignore_keys={
-                "is_set_start_state",
-                "sensors",
-                "start_position",
-                "start_rotation",
-            }
+            #     # ignore_keys={
+            #     # "is_set_start_state",
+            #     # "sensors",
+            #     # "start_position",
+            #     # "start_rotation",
+            # }
                 
             )
 
             sensor_specifications = []
             try:
+                import inspect
                 for sensor in self.sensor_suite.sensors.values():
                     sim_sensor_cfg = habitat_sim.CameraSensorSpec()
                     overwrite_config(
                         config_from=sensor.config, config_to=sim_sensor_cfg,
-                        ignore_keys={
-                        "height",
-                        #"hfov",
-                        "max_depth",
-                        "min_depth",
-                        "normalize_depth",
-                        "type",
-                        "width",
-                        "angle"
-                    }
+                    #     ignore_keys={
+                    #     "height",
+                    #     #"hfov",
+                    #     "max_depth",
+                    #     "min_depth",
+                    #     "normalize_depth",
+                    #     "type",
+                    #     "width",
+                    #     "angle"
+                    # }
                     )
                     sim_sensor_cfg.uuid = sensor.uuid
                     sim_sensor_cfg.resolution = list(
@@ -144,16 +144,16 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
                     sim_sensor_cfg = habitat_sim.SensorSpec()
                     overwrite_config(
                         config_from=sensor.config, config_to=sim_sensor_cfg,
-                        ignore_keys={
-                            "height",
-                            "hfov",
-                            "max_depth",
-                            "min_depth",
-                            "normalize_depth",
-                            "type",
-                            "width",
-                            "angle"
-                        }
+                        # ignore_keys={
+                        #     "height",
+                        #     "hfov",
+                        #     "max_depth",
+                        #     "min_depth",
+                        #     "normalize_depth",
+                        #     "type",
+                        #     "width",
+                        #     "angle"
+                        # }
                     )
                     sim_sensor_cfg.uuid = sensor.uuid
                     sim_sensor_cfg.resolution = list(

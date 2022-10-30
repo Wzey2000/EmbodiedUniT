@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from model.PCL.resnet_pcl import resnet18
 import os
 # this wrapper comes after vectorenv
-from habitat.core.vector_env import VectorEnv
+from custom_habitat.core.vector_env import VectorEnv
 from env_utils.env_wrapper.graph import Graph
 from utils.encoder_loaders import load_PCL_encoder, load_CRL_encoder
 
@@ -59,7 +59,7 @@ class BaseGraphWrapper(Wrapper):
                         {'goal_embedding': Box(low=-np.Inf, high=np.Inf, shape=(self.feature_dim,), dtype=np.float32)}
                     )                     
         self.num_agents = config.NUM_AGENTS
-
+        self.dummy_feat = torch.zeros(size=(self.B, 512), device=self.torch_device)
         self.reset_all_memory()
     
 
@@ -199,8 +199,7 @@ class BaseGraphWrapper(Wrapper):
         obs_list, reward_list, done_list, info_list = [list(x) for x in zip(*outputs)]
         obs_batch = batch_obs(obs_list, device=self.torch_device)
 
-        curr_vis_embedding = self.embed_obs(obs_batch)
-        self.localize(curr_vis_embedding, obs_batch['position'].detach().cpu().numpy(), obs_batch['step'], done_list)
+        self.localize(self.dummy_feat, obs_batch['position'].detach().cpu().numpy(), obs_batch['step'], done_list)
 
         global_memory_dict = self.get_global_memory()
         obs_batch = self.update_obs(obs_batch, global_memory_dict)
@@ -217,7 +216,7 @@ class BaseGraphWrapper(Wrapper):
         obs_batch = batch_obs(obs_list, device=self.torch_device)
 
         # posiitons are obtained by calling habitat_env.sim.get_agent_state().position
-        self.localize(torch.zeros(size=(obs_batch['position'].shape[0], 512), device=self.torch_device), obs_batch['position'].detach().cpu().numpy(), obs_batch['step'], [True]*self.B)
+        self.localize(self.dummy_feat, obs_batch['position'].detach().cpu().numpy(), obs_batch['step'], [True]*self.B)
 
         global_memory_dict = self.get_global_memory()
 

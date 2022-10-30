@@ -13,15 +13,15 @@ import numba
 import numpy as np
 from gym import spaces
 
-from habitat.config import Config
-from habitat.core.dataset import Dataset, Episode, EpisodeIterator
-from habitat.core.embodied_task import EmbodiedTask, Metrics
-from habitat.core.simulator import Observations, Simulator
-from habitat.datasets import make_dataset
-from habitat.sims import make_sim
-from habitat.tasks import make_task
-from habitat.utils import profiling_wrapper
-from habitat.tasks.nav.object_nav_task import mapping_mpcat40_to_goal21
+from custom_habitat.config import Config
+from custom_habitat.core.dataset import Dataset, Episode, EpisodeIterator
+from custom_habitat.core.embodied_task import EmbodiedTask, Metrics
+from custom_habitat.core.simulator import Observations, Simulator
+from custom_habitat.datasets import make_dataset
+from custom_habitat.sims import make_sim
+from custom_habitat.tasks import make_task
+from custom_habitat.utils import profiling_wrapper
+from custom_habitat.tasks.nav.nav import mapping_mpcat40_to_goal21
 
 
 class Env:
@@ -130,6 +130,8 @@ class Env:
         self._elapsed_steps = 0
         self._episode_start_time: Optional[float] = None
         self._episode_over = False
+        self._num_goals = getattr(self._config.ENVIRONMENT, 'NUM_GOALS', 1)
+        self._agent_task = 'search'
 
     @property
     def current_episode(self) -> Episode:
@@ -380,7 +382,6 @@ class RLEnv(gym.Env):
         :param config: config to construct :ref:`Env`
         :param dataset: dataset to construct :ref:`Env`.
         """
-
         self._env = Env(config, dataset)
         self.observation_space = self._env.observation_space
         self.action_space = self._env.action_space

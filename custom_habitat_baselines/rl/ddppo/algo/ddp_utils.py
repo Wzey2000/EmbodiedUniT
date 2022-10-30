@@ -11,7 +11,7 @@ import ifcfg
 import torch
 from torch import distributed as distrib
 
-from habitat import logger
+from custom_habitat import logger
 
 EXIT = threading.Event()
 EXIT.clear()

@@ -11,9 +11,9 @@ from torch import Tensor
 from torch import nn as nn
 from torch import optim as optim
 
-from habitat.utils import profiling_wrapper
-from habitat_baselines.common.rollout_storage import RolloutStorage
-from habitat_baselines.rl.ppo.policy import Policy
+from custom_habitat.utils import profiling_wrapper
+from custom_habitat_baselines.common.rollout_storage import RolloutStorage
+from custom_habitat_baselines.rl.ppo.policy import Policy
 
 EPS_PPO = 1e-5
 

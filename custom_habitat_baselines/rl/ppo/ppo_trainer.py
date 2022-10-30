@@ -14,26 +14,26 @@ import torch
 import tqdm
 from torch.optim.lr_scheduler import LambdaLR
 
-from habitat import Config, logger
-from habitat.utils import profiling_wrapper
-from habitat.utils.visualizations.utils import observations_to_image
-from habitat_baselines.common.base_trainer import BaseRLTrainer
-from habitat_baselines.common.baseline_registry import baseline_registry
-from habitat_baselines.common.environments import get_env_class
-from habitat_baselines.common.obs_transformers import (
+from custom_habitat import Config, logger
+from custom_habitat.utils import profiling_wrapper
+from custom_habitat.utils.visualizations.utils import observations_to_image
+from custom_habitat_baselines.common.base_trainer import BaseRLTrainer
+from custom_habitat_baselines.common.baseline_registry import baseline_registry
+from custom_habitat_baselines.common.environments import get_env_class
+from custom_habitat_baselines.common.obs_transformers import (
     apply_obs_transforms_batch,
     apply_obs_transforms_obs_space,
     get_active_obs_transforms,
 )
-from habitat_baselines.common.rollout_storage import RolloutStorage
-from habitat_baselines.common.tensorboard_utils import TensorboardWriter
-from habitat_baselines.rl.ppo import PPO
-from habitat_baselines.utils.common import (
+from custom_habitat_baselines.common.rollout_storage import RolloutStorage
+from custom_habitat_baselines.common.tensorboard_utils import TensorboardWriter
+from custom_habitat_baselines.rl.ppo import PPO
+from custom_habitat_baselines.utils.common import (
     batch_obs,
     generate_video,
     linear_decay,
 )
-from habitat_baselines.utils.env_utils import construct_envs
+from custom_habitat_baselines.utils.env_utils import construct_envs
 
 
 @baseline_registry.register_trainer(name="ppo")

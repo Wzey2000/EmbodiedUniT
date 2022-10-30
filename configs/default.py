@@ -8,8 +8,8 @@ from typing import List, Optional, Union
 
 import numpy as np
 
-from habitat import get_config as get_task_config
-from habitat.config import Config as CN
+from custom_habitat import get_config as get_task_config
+from custom_habitat.config import Config as CN
 import os
 
 DEFAULT_CONFIG_DIR = "configs/"
@@ -33,7 +33,7 @@ _C.TENSORBOARD_DIR = "data/logs/"
 _C.VIDEO_DIR = "data/video_dir"
 _C.EVAL_CKPT_PATH_DIR = "data/eval_checkpoints"  # path to ckpt or path to ckpts dir
 _C.CHECKPOINT_FOLDER = "data/new_checkpoints"
-
+_C.RESULTS_DIR = "data/eval_results"
 _C.NUM_PROCESSES = 2
 _C.NUM_VAL_PROCESSES = 0
 
@@ -42,7 +42,7 @@ _C.SENSORS = ["RGB_SENSOR", "DEPTH_SENSOR"]
 _C.NUM_UPDATES = 100000000
 _C.TOTAL_NUM_STEPS = -1
 _C.LOG_INTERVAL = 10
-_C.LOG_FILE = "train.log"
+_C.LOG_FILE = "data/train_log"
 _C.CHECKPOINT_INTERVAL = 50
 _C.NUM_CHECKPOINTS = -1
 _C.VIS_INTERVAL = 10
@@ -56,9 +56,12 @@ _C.NUM_GOALS = 1
 _C.NUM_AGENTS = 1
 _C.scene_data = 'gibson'
 _C.OBS_TO_SAVE = ['panoramic_rgb', 'panoramic_depth', 'target_goal']
-_C.noisy_actuation = True
+_C.noisy_actuation = False
 _C.USE_AUXILIARY_INFO = True
 
+_C.PROFILING = CN()
+_C.PROFILING.CAPTURE_START_STEP = -1
+_C.PROFILING.NUM_STEPS_TO_CAPTURE = -1
 #----------------------------------------------------------------------------
 # Base architecture config
 _C.features = CN()
@@ -118,30 +121,30 @@ _C.memory.RANDOM_SELECT = False # Whether or not add to randomly select graph no
 
 # For Habitat-web baseline
 
-_C.CNNRNN = CN()
-_C.CNNRNN.RGB_ENCODER = CN()
-_C.CNNRNN.RGB_ENCODER.cnn_type = "ResnetRGBEncoder"
-_C.CNNRNN.RGB_ENCODER.output_size = 256
-_C.CNNRNN.RGB_ENCODER.ddppo_checkpoint = "../VLN-CE/data/ddppo-models/gibson-2plus-resnet50.pth"
-_C.CNNRNN.RGB_ENCODER.backbone = 'resnet18'
-_C.CNNRNN.RGB_ENCODER.trainable = True
+_C.MODEL = CN()
+_C.MODEL.RGB_ENCODER = CN()
+_C.MODEL.RGB_ENCODER.cnn_type = "ResnetRGBEncoder"
+_C.MODEL.RGB_ENCODER.output_size = 256
+_C.MODEL.RGB_ENCODER.ddppo_checkpoint = "../VLN-CE/data/ddppo-models/gibson-2plus-resnet50.pth"
+_C.MODEL.RGB_ENCODER.backbone = 'resnet18'
+_C.MODEL.RGB_ENCODER.trainable = True
 
-_C.CNNRNN.DEPTH_ENCODER = CN()
-_C.CNNRNN.DEPTH_ENCODER.cnn_type = "VlnResnetDepthEncoder"
-_C.CNNRNN.DEPTH_ENCODER.output_size = 128
-_C.CNNRNN.DEPTH_ENCODER.ddppo_checkpoint = "../VLN-CE/data/ddppo-models/gibson-2plus-resnet50.pth"
-_C.CNNRNN.DEPTH_ENCODER.backbone = 'resnet50'
-_C.CNNRNN.DEPTH_ENCODER.trainable = False
+_C.MODEL.DEPTH_ENCODER = CN()
+_C.MODEL.DEPTH_ENCODER.cnn_type = "VlnResnetDepthEncoder"
+_C.MODEL.DEPTH_ENCODER.output_size = 128
+_C.MODEL.DEPTH_ENCODER.ddppo_checkpoint = "../VLN-CE/data/ddppo-models/gibson-2plus-resnet50.pth"
+_C.MODEL.DEPTH_ENCODER.backbone = 'resnet50'
+_C.MODEL.DEPTH_ENCODER.trainable = False
 
-_C.CNNRNN.USE_SEMANTICS = False
+_C.MODEL.USE_SEMANTICS = False
 
-_C.SEQ2SEQ = CN()
-_C.SEQ2SEQ.use_prev_action = True
+_C.MODEL.SEQ2SEQ = CN()
+_C.MODEL.SEQ2SEQ.use_prev_action = True
 
-_C.STATE_ENCODER = CN()
-_C.STATE_ENCODER.hidden_size = 512
-_C.STATE_ENCODER.num_recurrent_layers = 2
-_C.STATE_ENCODER.rnn_type = 'GRU'
+_C.MODEL.STATE_ENCODER = CN()
+_C.MODEL.STATE_ENCODER.hidden_size = 512
+_C.MODEL.STATE_ENCODER.num_recurrent_layers = 2
+_C.MODEL.STATE_ENCODER.rnn_type = 'GRU'
 
 _C.USE_GPS_COMPASS = False
 # DDP
@@ -199,7 +202,35 @@ _C.RL.PPO.backbone='resnet18'
 _C.RL.PPO.rnn_type='LSTM'
 _C.RL.PPO.num_recurrent_layers=2
 
+_C.RL.POLICY = CN()
+_C.RL.POLICY.name = "PointNavBaselinePolicy"
+# -----------------------------------------------------------------------------
+# OBS_TRANSFORMS CONFIG
+# -----------------------------------------------------------------------------
+_C.RL.POLICY.OBS_TRANSFORMS = CN()
+_C.RL.POLICY.OBS_TRANSFORMS.ENABLED_TRANSFORMS = tuple()
+_C.RL.POLICY.OBS_TRANSFORMS.CENTER_CROPPER = CN()
+_C.RL.POLICY.OBS_TRANSFORMS.CENTER_CROPPER.HEIGHT = 256
+_C.RL.POLICY.OBS_TRANSFORMS.CENTER_CROPPER.WIDTH = 256
+_C.RL.POLICY.OBS_TRANSFORMS.RESIZE_SHORTEST_EDGE = CN()
+_C.RL.POLICY.OBS_TRANSFORMS.RESIZE_SHORTEST_EDGE.SIZE = 256
+_C.RL.POLICY.OBS_TRANSFORMS.CUBE2EQ = CN()
+_C.RL.POLICY.OBS_TRANSFORMS.CUBE2EQ.HEIGHT = 256
+_C.RL.POLICY.OBS_TRANSFORMS.CUBE2EQ.WIDTH = 512
+_C.RL.POLICY.OBS_TRANSFORMS.CUBE2EQ.SENSOR_UUIDS = list()
+_C.RL.POLICY.OBS_TRANSFORMS.CUBE2FISH = CN()
+_C.RL.POLICY.OBS_TRANSFORMS.CUBE2FISH.HEIGHT = 256
+_C.RL.POLICY.OBS_TRANSFORMS.CUBE2FISH.WIDTH = 256
+_C.RL.POLICY.OBS_TRANSFORMS.CUBE2FISH.FOV = 180
+_C.RL.POLICY.OBS_TRANSFORMS.CUBE2FISH.PARAMS = (0.2, 0.2, 0.2)
+_C.RL.POLICY.OBS_TRANSFORMS.CUBE2FISH.SENSOR_UUIDS = list()
+_C.RL.POLICY.OBS_TRANSFORMS.EQ2CUBE = CN()
+_C.RL.POLICY.OBS_TRANSFORMS.EQ2CUBE.HEIGHT = 256
+_C.RL.POLICY.OBS_TRANSFORMS.EQ2CUBE.WIDTH = 256
+_C.RL.POLICY.OBS_TRANSFORMS.EQ2CUBE.SENSOR_UUIDS = list()
+
 _C.BC = CN()
+_C.BC.CKPT = ''
 _C.BC.USE_IW = False
 _C.BC.lr = 0.0001
 _C.BC.eps = 0.00001
@@ -258,11 +289,13 @@ def get_config(
         if not os.path.exists(config.VIDEO_DIR): os.mkdir(config.VIDEO_DIR)
         if not os.path.exists(config.EVAL_CKPT_PATH_DIR): os.mkdir(config.EVAL_CKPT_PATH_DIR)
         if not os.path.exists(config.CHECKPOINT_FOLDER): os.mkdir(config.CHECKPOINT_FOLDER)
+        if not os.path.exists(config.LOG_FILE): os.mkdir(config.LOG_FILE)
 
         config.TENSORBOARD_DIR = os.path.join(config.TENSORBOARD_DIR, config.VERSION)
         config.VIDEO_DIR = os.path.join(config.VIDEO_DIR, config.VERSION)
         config.EVAL_CKPT_PATH_DIR = os.path.join(config.EVAL_CKPT_PATH_DIR, config.VERSION)
         config.CHECKPOINT_FOLDER = os.path.join(config.CHECKPOINT_FOLDER, config.VERSION)
+        config.LOG_FILE = os.path.join(config.LOG_FILE, '{}.log'.format(config.VERSION))
         
         if not os.path.exists(config.TENSORBOARD_DIR): os.mkdir(config.TENSORBOARD_DIR)
         if not os.path.exists(config.VIDEO_DIR): os.mkdir(config.VIDEO_DIR)

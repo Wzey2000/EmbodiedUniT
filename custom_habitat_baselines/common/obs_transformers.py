@@ -32,38 +32,36 @@ import torch
 from gym import spaces
 from torch import nn
 
-from habitat.config import Config
-from habitat.core.logging import logger
-from habitat_baselines.common.baseline_registry import baseline_registry
-from habitat_baselines.utils.common import (
+from custom_habitat.config import Config
+from custom_habitat.core.logging import logger
+from custom_habitat_baselines.common.baseline_registry import baseline_registry
+from custom_habitat_baselines.utils.common import (
     center_crop,
     get_image_height_width,
     image_resize_shortest_edge,
     overwrite_gym_box_shape,
 )
-from habitat_baselines.common.obs_transformers import ObservationTransformer
 
-# class ObservationTransformer(nn.Module, metaclass=abc.ABCMeta):
-#     """This is the base ObservationTransformer class that all other observation
-#     Transformers should extend. from_config must be implemented by the transformer.
-#     transform_observation_space is only needed if the observation_space ie.
-#     (resolution, range, or num of channels change)."""
+class ObservationTransformer(nn.Module, metaclass=abc.ABCMeta):
+    """This is the base ObservationTransformer class that all other observation
+    Transformers should extend. from_config must be implemented by the transformer.
+    transform_observation_space is only needed if the observation_space ie.
+    (resolution, range, or num of channels change)."""
 
-#     def transform_observation_space(
-#         self, observation_space: spaces.Dict, **kwargs
-#     ):
-#         return observation_space
+    def transform_observation_space(
+        self, observation_space: spaces.Dict, **kwargs
+    ):
+        return observation_space
 
-#     @classmethod
-#     @abc.abstractmethod
-#     def from_config(cls, config: Config):
-#         pass
+    @classmethod
+    @abc.abstractmethod
+    def from_config(cls, config: Config):
+        pass
 
-#     def forward(
-#         self, observations: Dict[str, torch.Tensor]
-#     ) -> Dict[str, torch.Tensor]:
-#         return observations
-
+    def forward(
+        self, observations: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
+        return observations
 
 @baseline_registry.register_obs_transformer()
 class ResizeShortestEdge(ObservationTransformer):

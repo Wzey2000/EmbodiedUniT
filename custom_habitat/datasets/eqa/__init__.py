@@ -4,13 +4,13 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from habitat.core.dataset import Dataset
-from habitat.core.registry import registry
+from custom_habitat.core.dataset import Dataset
+from custom_habitat.core.registry import registry
 
 
 def _try_register_mp3d_eqa_dataset():
     try:
-        from habitat.datasets.eqa.mp3d_eqa_dataset import (  # noqa: F401 isort:skip
+        from custom_habitat.datasets.eqa.mp3d_eqa_dataset import (  # noqa: F401 isort:skip
             Matterport3dDatasetV1,
         )
     except ImportError as e:

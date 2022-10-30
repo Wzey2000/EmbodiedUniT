@@ -13,8 +13,8 @@ import numpy as np
 import torch
 from gym import Space, spaces
 
-from habitat.config import Config
-from habitat.core.dataset import Episode
+from custom_habitat.config import Config
+from custom_habitat.core.dataset import Episode
 
 VisualObservation = Union[torch.Tensor, np.ndarray]
 

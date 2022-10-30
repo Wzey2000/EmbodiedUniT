@@ -10,8 +10,8 @@ from typing import ClassVar, Dict, List
 
 import torch
 
-from habitat import Config, logger
-from habitat_baselines.common.tensorboard_utils import TensorboardWriter
+from custom_habitat import Config, logger
+from custom_habitat_baselines.common.tensorboard_utils import TensorboardWriter
 from .utils import poll_checkpoint_folder
 
 

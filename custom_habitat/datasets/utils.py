@@ -14,14 +14,14 @@ from typing import Iterable, List, Union
 
 from numpy import float64
 
-from habitat.core.logging import logger
-from habitat.core.simulator import ShortestPathPoint
-from habitat.sims.habitat_simulator.actions import HabitatSimActions
-from habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
-from habitat.utils.geometry_utils import quaternion_to_list
+from custom_habitat.core.logging import logger
+from custom_habitat.core.simulator import ShortestPathPoint
+from custom_habitat.sims.habitat_simulator.actions import HabitatSimActions
+from custom_habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
+from custom_habitat.utils.geometry_utils import quaternion_to_list
 
 try:
-    from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
+    from custom_habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
 except ImportError:
     pass
 

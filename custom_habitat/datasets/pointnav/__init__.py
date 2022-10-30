@@ -4,8 +4,8 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from habitat.core.dataset import Dataset
-from habitat.core.registry import registry
+from custom_habitat.core.dataset import Dataset
+from custom_habitat.core.registry import registry
 
 
 # TODO(akadian): This is a result of moving SimulatorActions away from core

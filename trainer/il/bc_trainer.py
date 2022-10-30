@@ -1,6 +1,8 @@
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
+from torch.cuda.amp import autocast as autocast
+from torch.cuda.amp import GradScaler
 import numpy as np
 
 import imageio
@@ -22,8 +24,9 @@ class BC_trainer:#(nn.Module):
         self.max_grad_norm = cfg.BC.max_grad_norm
         self.use_iw = cfg.BC.USE_IW
         self.use_aux_tasks = cfg.USE_AUXILIARY_INFO
-
+        self.use_gpscompass = cfg.USE_GPS_COMPASS
         self.optimizer_to_GPU()
+        #self.scaler = GradScaler()
     
     def optimizer_to_GPU(self):
         for param in self.optim.state.values():
@@ -51,16 +54,17 @@ class BC_trainer:#(nn.Module):
             torch.save(save_dict, file_name)
     
     def train(self, batch, env_global_node, train=True):
-        demo_rgb, demo_depth, demo_act, positions, rotations, targets, target_img, scene, start_pose, aux_info = batch
-        demo_rgb, demo_depth, demo_act = demo_rgb.to(self.device), demo_depth.to(self.device), demo_act.to(self.device)
-        target_img, positions, rotations = target_img.to(self.device), positions.float().to(self.device), rotations.float().to(self.device)
-        positions -= positions[:,0:1]
-        rotations -= rotations[:,0:1]
+        demo_rgb, demo_depth, demo_act = batch['rgb'].to(self.device), batch['depth'].to(self.device), batch['action'].to(self.device)
+        target_img, targets = batch['target_img'].to(self.device), batch['target_idx']
 
-        aux_info = {
-                    # 'have_been': aux_info['have_been'].to(self.device),
-                    # 'distance': aux_info['distance'].to(self.device),
-                    'IW': aux_info['IW'].to(self.device)}
+        if self.use_gpscompass:
+            positions, rotations = batch['position'].to(self.device), batch['rotation'].to(self.device)
+            positions -= positions[:,0:1]
+            rotations -= rotations[:,0:1]
+
+        if self.use_iw:
+            iw = batch['IW'].to(self.device)
+
         self.B = demo_act.shape[0]
         # self.env_wrapper.B = demo_act.shape[0]
         # self.env_wrapper.reset_all_memory(self.B)
@@ -70,7 +74,7 @@ class BC_trainer:#(nn.Module):
         hidden_states = torch.zeros(self.num_recurrent_layers, self.B, self.output_size).to(self.device)
 
         actions = torch.zeros([self.B], device=self.device)
-        results = {'imgs': [], 'curr_node': [], 'node_list':[], 'actions': [], 'gt_actions': [], 'target': [], 'scene':scene[0], 'A': [], 'position': [],
+        results = {'imgs': [], 'curr_node': [], 'node_list':[], 'actions': [], 'gt_actions': [], 'target': [], 'position': [],
                    'have_been': [], 'distance': [], 'pred_have_been': [], 'pred_distance': []}
         losses = []
         span_losses = []
@@ -83,11 +87,13 @@ class BC_trainer:#(nn.Module):
 
             obs_t = {}
             obs_t['step'] = torch.ones(self.B, device=self.device)*t
-            #obs_t['target_goal'] = target_goal
+            #obs_t['target'] = target_goal
             obs_t['rgb'] = torch.cat([demo_rgb[:,t], target_goal], dim=0)
             obs_t['depth'] = demo_depth[:,t]
-            obs_t['position'] = positions[:,t]
-            obs_t['rotation'] = rotations[:,t]
+
+            if self.use_gpscompass:
+                obs_t['position'] = positions[:,t]
+                obs_t['rotation'] = rotations[:,t]
             # if t < lengths[0]:
             #     results['imgs'].append(demo_rgb[0,t].cpu().numpy())
             #     results['target'].append(target_goal[0].cpu().numpy())
@@ -102,6 +108,7 @@ class BC_trainer:#(nn.Module):
                 b = torch.where(actions==-100)
                 actions[b] = 0
 
+            #with autocast():
             (
                 pred_act,
                 actions_logits,
@@ -111,54 +118,51 @@ class BC_trainer:#(nn.Module):
                 hidden_states,
                 actions.view(self.B,1),
                 masks.unsqueeze(1),
-            )
-                    
-            try:
-                if not (gt_act == -100).all():
-                    
-                    loss = F.cross_entropy(actions_logits.view(-1,actions_logits.shape[1]),gt_act.long().view(-1), reduction='none')#, weight=action_weight)
-                    if self.use_iw:
-                        loss = (loss * aux_info['IW'][:,t]).mean()
-                    else:
-                        loss = loss.mean()
-                    # pred1, pred2 = preds
-                    valid_indices = gt_act.long() != -100
-                    # aux_loss1 = F.binary_cross_entropy_with_logits(pred1[valid_indices].view(-1), aux_info['have_been'][valid_indices,t].float().reshape(-1))
-                    # aux_loss2 = F.mse_loss(F.sigmoid(pred2)[valid_indices].view(-1), aux_info['distance'][valid_indices,t].float().reshape(-1))
+            )   
 
-                    losses.append(loss)
-                    # aux_losses1.append(aux_loss1)
-                    # aux_losses2.append(aux_loss2)
-      
-                    results['actions'].append(pred_act[0].detach().cpu().numpy())
-                    results['gt_actions'].append(int(gt_act[0].detach().cpu().numpy()))
-
+            if not (gt_act == -100).all():
+                
+                loss = F.cross_entropy(actions_logits.view(-1,actions_logits.shape[1]),gt_act.long().view(-1), reduction='none')#, weight=action_weight)
+                if self.use_iw:
+                    loss = (loss * iw[:,t]).mean()
                 else:
-                    results['actions'].append(-1)
-                    results['gt_actions'].append(-1)
-            except Exception as e: # CUDA_LAUNCH_BLOCKING=1
-                print("==================gt_act=================\n",gt_act)
-                print("==================actions_logits=================\n",actions_logits)
-                print("==================aux_info['have_been'][valid_indices,t]=================\n",aux_info['have_been'][valid_indices,t])
-                raise e
-            
+                    loss = loss.mean()
+                # pred1, pred2 = preds
+                valid_indices = gt_act.long() != -100
+                # aux_loss1 = F.binary_cross_entropy_with_logits(pred1[valid_indices].view(-1), aux_info['have_been'][valid_indices,t].float().reshape(-1))
+                # aux_loss2 = F.mse_loss(F.sigmoid(pred2)[valid_indices].view(-1), aux_info['distance'][valid_indices,t].float().reshape(-1))
+
+                losses.append(loss)
+                # aux_losses1.append(aux_loss1)
+                # aux_losses2.append(aux_loss2)
+    
+                results['actions'].append(pred_act[0].detach().cpu().numpy())
+                results['gt_actions'].append(int(gt_act[0].detach().cpu().numpy()))
+
+            else:
+                results['actions'].append(-1)
+                results['gt_actions'].append(-1)
+
+            action_loss = torch.stack(losses).mean()
             # results['pred_have_been'].append(F.sigmoid(pred1)[0].detach().cpu().numpy())
             # results['pred_distance'].append(F.sigmoid(pred2)[0].detach().cpu().numpy())
             actions = demo_act[:,t].contiguous()
 
-        action_loss = torch.stack(losses).mean()
-
-        aux_loss1 = 0 #torch.stack(aux_losses1).mean()
-        aux_loss2 = 0 #torch.stack(aux_losses2).mean()
-        total_loss = action_loss + aux_loss1 + aux_loss2
+        # aux_loss1 = torch.stack(aux_losses1).mean()
+        # aux_loss2 = torch.stack(aux_losses2).mean()
+        total_loss = action_loss # + aux_loss1 + aux_loss2
         if train:
             self.optim.zero_grad()
+            #self.scaler.scale(total_loss).backward()
             total_loss.backward()
 
             nn.utils.clip_grad_norm_(
                 self.agent.parameters(), self.max_grad_norm
             )
             self.optim.step()
+            #self.scaler.step(self.optim)
+
+            #self.scaler.update()
 
         loss_dict = {}
         loss_dict['loss'] = action_loss.item()

@@ -8,8 +8,10 @@ from env_utils.env_wrapper.base_graph_wrapper import BaseGraphWrapper
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+import quaternion as q
 from model.policy import *
 from utils.utils import get_model_summary
+from roma import unitquat_to_rotvec
 
 class CNNRNNRunner(nn.Module):
     def __init__(self, config, env_global_node=None, return_features=False):
@@ -66,45 +68,7 @@ class CNNRNNRunner(nn.Module):
         self.initial_pose = None
         self.initial_rot = 0
         #self.calc_GFLOPs()
-    
-    def calc_GFLOPs(self):
-        B = 1
-        M = self.config.memory.memory_size
-        observations = {
-            'panoramic_rgb': torch.randn(B, 64, 252,3 ),
-            'panoramic_depth': torch.randn(B, 64, 252, 1),
-            'target_goal': torch.randn(B, 64, 252, 4),
-            'global_A': torch.ones(B, M, M) > 0,
-            'global_memory': torch.randn([B, M, 512]),
-            'global_mask': torch.ones(B, M),
-            'global_time': torch.zeros(B, M),
-            'step': torch.zeros(B)
-        }
-        hidden_state = torch.randn(self.agent.net.num_recurrent_layers, B,
-                                         self.agent.net._hidden_size)
-        prev_actions = torch.zeros([B])
-        #emb = nn.Embedding(self.agent.dim_actions + 1, 32)
-        #prev_actions = emb(((prev_actions.float() + 1)).long().squeeze(-1)).to(self.torch_device)
-        
-        details, VGMNet_GFLOPs, returns = get_model_summary(
-            self.agent.net,
-            [observations,
-            hidden_state,
-            prev_actions,
-            torch.ones(B).unsqueeze(1),
-            self.env_global_node],
-            verbose=True)
-        
-        details, action_head_GFLOPs, _ = get_model_summary(
-            self.agent.action_distribution,
-            [returns[0]],
-            verbose=True)
-
-        details, value_head_GFLOPs, _ = get_model_summary(
-            self.agent.critic,
-            [returns[0]],
-            verbose=True)
-    
+     
     def reset(self, obs):
         self.B = 1
         self.hidden_states = torch.zeros(self.agent.net.num_recurrent_layers, self.B,
@@ -113,8 +77,13 @@ class CNNRNNRunner(nn.Module):
         self.actions = torch.zeros([self.B], device=self.torch_device)
         self.time_t = 0
 
-        self.initial_pose = obs['posiiton']
-        self.initial_rot = obs['rotation']
+        if self.use_gpscompass: 
+            self.initial_pose = obs['position'][0]
+            quat = obs['rotation'].cpu().numpy()
+            temp = q.as_euler_angles(q.from_float_array(quat)).astype(np.float32)
+
+            self.initial_rot = torch.tensor(temp[0,1], device=self.torch_device)
+
 
     def step(self, obs, reward, done, info, env=None):
         new_obs = {}
@@ -129,15 +98,15 @@ class CNNRNNRunner(nn.Module):
                 new_obs[k] = v
         
         if self.use_gpscompass: # Relative to the inital pose
-            print(new_obs['position'].shape, new_obs['rotation'].shape)
+            new_obs['rotation'] = torch.from_numpy((q.as_euler_angles(q.from_float_array(new_obs['rotation'].cpu().numpy())).astype(np.float32))[:,1]).to(self.torch_device)
             new_obs['position']  = torch.cat(
                 [-(new_obs['position'][:,2:] - self.initial_pose[2]), new_obs['position'][:,0:1] - self.initial_pose[0]],
                 dim=-1)
             new_obs['rotation'] -= self.initial_rot
+        
+        new_obs['rgb'] = torch.cat([new_obs['rgb'], new_obs['target_goal']], dim=0)
         obs = new_obs
 
-
-        input(obs['position'].shape)
         t = time.time()
         (
             actions,

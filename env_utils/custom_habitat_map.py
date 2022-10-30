@@ -2,23 +2,23 @@
 from typing import Any, Dict, List, Optional, Type, Union
 import numpy as np
 
-from habitat.config import Config
-from habitat.core.dataset import Dataset, Episode
-from habitat.core.embodied_task import Measure
-from habitat.core.logging import logger
-from habitat.core.registry import registry
-from habitat.core.simulator import (
+from custom_habitat.config import Config
+from custom_habitat.core.dataset import Dataset, Episode
+from custom_habitat.core.embodied_task import Measure
+from custom_habitat.core.logging import logger
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import (
     AgentState,
     Simulator,
 )
-from habitat.core.utils import not_none_validator, try_cv2_import
-from habitat.tasks.utils import (
+from custom_habitat.core.utils import not_none_validator, try_cv2_import
+from custom_habitat.tasks.utils import (
     cartesian_to_polar
 )
 import math
 import quaternion as q
-from habitat.utils.visualizations import fog_of_war, maps
-from habitat.tasks.nav.nav import TopDownMap
+from custom_habitat.utils.visualizations import fog_of_war, maps
+from custom_habitat.tasks.nav.nav import TopDownMap
 import os
 cv2 = try_cv2_import()
 

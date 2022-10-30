@@ -4,13 +4,14 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from habitat.core.logging import logger
-from habitat.core.registry import registry
-from habitat.datasets.eqa import _try_register_mp3d_eqa_dataset
-from habitat.datasets.object_nav import _try_register_objectnavdatasetv1
-from habitat.datasets.pointnav import _try_register_pointnavdatasetv1
-from habitat.datasets.vln import _try_register_r2r_vln_dataset
-from habitat.datasets.pickplace import _try_register_pickplace_dataset
+from custom_habitat.core.logging import logger
+from custom_habitat.core.registry import registry
+from .image_nav import *
+# from custom_habitat.datasets.eqa import _try_register_mp3d_eqa_dataset
+from custom_habitat.datasets.object_nav import _try_register_objectnavdatasetv1
+# from custom_habitat.datasets.pointnav import _try_register_pointnavdatasetv1
+# from custom_habitat.datasets.vln import _try_register_r2r_vln_dataset
+# from custom_habitat.datasets.pickplace import _try_register_pickplace_dataset
 
 
 def make_dataset(id_dataset, **kwargs):
@@ -22,7 +23,7 @@ def make_dataset(id_dataset, **kwargs):
 
 
 _try_register_objectnavdatasetv1()
-_try_register_mp3d_eqa_dataset()
-_try_register_pointnavdatasetv1()
-_try_register_r2r_vln_dataset()
-_try_register_pickplace_dataset()
+# _try_register_mp3d_eqa_dataset()
+# _try_register_pointnavdatasetv1()
+# _try_register_r2r_vln_dataset()
+# _try_register_pickplace_dataset()

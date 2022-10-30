@@ -1,21 +1,22 @@
-from opcode import hasconst
 import torch
 import torch.nn as nn
 import numpy as np
-from habitat import Config, logger
+from custom_habitat import Config, logger
 from gym import Space
 from gym.spaces import Dict, Box
 from model.rnn_state_encoder import RNNStateEncoder
-from habitat_baselines.utils.common import CategoricalNet
+from custom_habitat_baselines.utils.common import CategoricalNet
 from model.resnet import resnet
 from model.resnet.resnet import ResNetEncoder
+
+from torch.cuda.amp import autocast as autocast
 
 from custom_habitat.tasks.nav.nav import (
     EpisodicCompassSensor,
     EpisodicGPSSensor,
 )
 
-from custom_habitat.tasks.nav.object_nav_task import (
+from custom_habitat.tasks.nav.nav import (
     ObjectGoalSensor,
     task_cat2mpcat40,
     mapping_mpcat40_to_goal21
@@ -39,11 +40,12 @@ class CriticHead(nn.Module):
 class CNNRNNPolicy(nn.Module):
     def __init__(
             self,
+            config,
             observation_space, # a SpaceDict instace. See line 35 in train_bc.py
             action_space,
-            no_critic=False,
+            no_critic=True,
             normalize_visual_inputs=True,
-            config=None
+            
     ):
         super().__init__()
         self.net = CNNRNNNet(
@@ -142,37 +144,37 @@ class CNNRNNNet(nn.Module):
         rnn_input_size = 0
         
         # Init the depth encoder
-        assert config.CNNRNN.DEPTH_ENCODER.cnn_type in [
+        assert config.MODEL.DEPTH_ENCODER.cnn_type in [
             "VlnResnetDepthEncoder",
             "None",
         ], "DEPTH_ENCODER.cnn_type must be VlnResnetDepthEncoder"
-        if config.CNNRNN.DEPTH_ENCODER.cnn_type == "VlnResnetDepthEncoder":
+        if config.MODEL.DEPTH_ENCODER.cnn_type == "VlnResnetDepthEncoder":
             self.depth_encoder = VlnResnetDepthEncoder(
                 observation_space,
-                output_size=config.CNNRNN.DEPTH_ENCODER.output_size,
-                checkpoint=config.CNNRNN.DEPTH_ENCODER.ddppo_checkpoint,
-                backbone=config.CNNRNN.DEPTH_ENCODER.backbone,
-                trainable=config.CNNRNN.DEPTH_ENCODER.trainable,
+                output_size=config.MODEL.DEPTH_ENCODER.output_size,
+                checkpoint=config.MODEL.DEPTH_ENCODER.ddppo_checkpoint,
+                backbone=config.MODEL.DEPTH_ENCODER.backbone,
+                trainable=config.MODEL.DEPTH_ENCODER.trainable,
             )
-            rnn_input_size += config.CNNRNN.DEPTH_ENCODER.output_size
+            rnn_input_size += config.MODEL.DEPTH_ENCODER.output_size
         else:
             self.depth_encoder = None
 
         # Init the RGB visual encoder
-        assert config.CNNRNN.RGB_ENCODER.cnn_type in [
+        assert config.MODEL.RGB_ENCODER.cnn_type in [
             "ResnetRGBEncoder",
             "None",
         ], "RGB_ENCODER.cnn_type must be 'ResnetRGBEncoder'."
 
-        if config.CNNRNN.RGB_ENCODER.cnn_type == "ResnetRGBEncoder":
+        if config.MODEL.RGB_ENCODER.cnn_type == "ResnetRGBEncoder":
             self.rgb_encoder = ResnetRGBEncoder(
                 observation_space,
-                output_size=config.CNNRNN.RGB_ENCODER.output_size,
-                backbone=config.CNNRNN.RGB_ENCODER.backbone,
-                trainable=config.CNNRNN.RGB_ENCODER.trainable,
+                output_size=config.MODEL.RGB_ENCODER.output_size,
+                backbone=config.MODEL.RGB_ENCODER.backbone,
+                trainable=config.MODEL.RGB_ENCODER.trainable,
                 normalize_visual_inputs=normalize_visual_inputs,
             )
-            rnn_input_size += 2 * config.CNNRNN.RGB_ENCODER.output_size
+            rnn_input_size += 2 * config.MODEL.RGB_ENCODER.output_size
         else:
             self.rgb_encoder = None
             logger.info("RGB encoder is none")
@@ -180,8 +182,8 @@ class CNNRNNNet(nn.Module):
         sem_seg_output_size = 0
         self.semantic_predictor = None
         self.is_thda = False
-        self.use_semantic_encoder = config.CNNRNN.USE_SEMANTICS
-        if config.CNNRNN.USE_SEMANTICS:
+        self.use_semantic_encoder = config.MODEL.USE_SEMANTICS
+        if config.MODEL.USE_SEMANTICS:
             sem_embedding_size = config.SEMANTIC_ENCODER.embedding_size
 
             self.is_thda = config.SEMANTIC_ENCODER.is_thda
@@ -246,26 +248,26 @@ class CNNRNNNet(nn.Module):
 
 
         self.goal_embedding = nn.Sequential(
-            nn.Linear(config.CNNRNN.RGB_ENCODER.output_size, config.CNNRNN.RGB_ENCODER.output_size),
+            nn.Linear(config.MODEL.RGB_ENCODER.output_size, config.MODEL.RGB_ENCODER.output_size),
             nn.ReLU(True)
         )
 
         logger.info("\n\nSetting up Object Goal sensor")
 
-        self.use_prev_action = config.SEQ2SEQ.use_prev_action
-        if config.SEQ2SEQ.use_prev_action:
+        self.use_prev_action = config.MODEL.SEQ2SEQ.use_prev_action
+        if config.MODEL.SEQ2SEQ.use_prev_action:
             self.prev_action_embedding = nn.Embedding(action_space.n + 1, 32)
             rnn_input_size += self.prev_action_embedding.embedding_dim
 
         self.rnn_input_size = rnn_input_size
 
-        self.output_size = config.STATE_ENCODER.hidden_size
+        self.output_size = config.MODEL.STATE_ENCODER.hidden_size
 
         self.state_encoder = RNNStateEncoder(
             input_size=rnn_input_size,
             hidden_size=self.output_size,
-            num_layers=config.STATE_ENCODER.num_recurrent_layers,
-            rnn_type=config.STATE_ENCODER.rnn_type,
+            num_layers=config.MODEL.STATE_ENCODER.num_recurrent_layers,
+            rnn_type=config.MODEL.STATE_ENCODER.rnn_type,
         )
         
         self.train()
@@ -315,27 +317,28 @@ class CNNRNNNet(nn.Module):
             goal_visible_area = torch.true_divide(goal_visible_pixels, obj_semantic.size(-1)).float()
             return goal_visible_area.unsqueeze(-1)
 
+    #@autocast()
     def forward(self, observations, rnn_hidden_states, prev_actions, masks):
         r"""
         instruction_embedding: [batch_size x INSTRUCTION_ENCODER.output_size]
         depth_embedding: [batch_size x DEPTH_ENCODER.output_size]
         rgb_embedding: [batch_size x RGB_ENCODER.output_size]
         """
-        B = observations["rgb"].shape[0] # 同时包含观测和目标图像
+        B = observations["depth"].shape[0] # 同时包含观测和目标图像
 
         x = []
 
         if self.depth_encoder is not None:
-
             depth_embedding = self.depth_encoder(observations)
             x.append(depth_embedding)
 
         # Encode both obs and the target image
         if self.rgb_encoder is not None:
-            observations["rgb"] = torch.cat([observations["rgb"], observations["target_goal"]], dim=0)
-            rgb_target_embedding = self.rgb_encoder(observations)
-
-            x.append(rgb_target_embedding.view(2, -1, rgb_target_embedding.shape[-1]).permute(1,0,2).contiguous().view(B, -1))
+            rgb_embedding = self.rgb_encoder(observations)
+            observations["rgb"] = observations["image_goal"]
+            target_embedding = self.rgb_encoder(observations)
+            x.append(rgb_embedding)
+            x.append(target_embedding)
 
         if self.use_semantic_encoder != 0:
             semantic_obs = observations["semantic"]

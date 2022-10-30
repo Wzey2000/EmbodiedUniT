@@ -3,8 +3,8 @@
 import random
 from typing import Type, Union
 
-import habitat
-from habitat import Config, Env, RLEnv, make_dataset
+import custom_habitat as habitat
+from custom_habitat import Config, Env, RLEnv, make_dataset
 import habitat_sim
 
 
@@ -22,38 +22,43 @@ def make_env_fn(
     env.seed(rank)
     return env
 
-def add_camera(task_config, normalize_depth=True, has_target=True):
+def add_camera(task_config, normalize_depth=True):
     camera_config = task_config.SIMULATOR.RGB_SENSOR.clone()
-    camera_config.TYPE = "RGBSensor"
+    camera_config.TYPE = task_config.TASK.RGB_SENSOR.TYPE #"RGBSensor"
     task_config.SIMULATOR.update({"RGB_SENSOR": camera_config})
-    sensors = ["RGB_SENSOR"]
+    #sensors = ["RGB_SENSOR"]
 
-    sensor_dict = {'TYPE': 'RGBSensor', 'WIDTH': task_config.SIMULATOR.RGB_SENSOR.WIDTH,
+    sensor_dict = {'TYPE': task_config.TASK.RGB_SENSOR.TYPE, 'WIDTH': task_config.SIMULATOR.RGB_SENSOR.WIDTH,
                  'HEIGHT': task_config.SIMULATOR.RGB_SENSOR.HEIGHT, 'NUM_CAMERA': 1,
                  'AGENT_ID': '0'}
     task_config.TASK['RGB_SENSOR'] = habitat.Config()
     task_config.TASK['RGB_SENSOR'].update(sensor_dict)
-    sensors_with_ids = ["RGB_SENSOR"]
+    # sensors_with_ids = ["RGB_SENSOR"]
 
-    use_depth = 'DEPTH_SENSOR' in task_config.TASK.SENSORS
-    if use_depth:
-        new_depth_camera_config = task_config.SIMULATOR.DEPTH_SENSOR.clone()
-        new_depth_camera_config.TYPE = "DepthSensor"
-        new_depth_camera_config.NORMALIZE_DEPTH = normalize_depth
-        task_config.SIMULATOR.update({'DEPTH_SENSOR': new_depth_camera_config})
-        sensors.append('DEPTH_SENSOR')
+    task_config.TASK.DEPTH_SENSOR.NORMALIZE_DEPTH = normalize_depth
+    task_config.TASK.DEPTH_SENSOR.HEIGHT = task_config.SIMULATOR.DEPTH_SENSOR.HEIGHT
+    task_config.TASK.DEPTH_SENSOR.WIDTH = task_config.SIMULATOR.DEPTH_SENSOR.WIDTH
+    task_config.TASK.DEPTH_SENSOR.MIN_DEPTH = 0.0
+    task_config.TASK.DEPTH_SENSOR.MAX_DEPTH = 10.0
+    # use_depth = 'DEPTH_SENSOR' in task_config.TASK.SENSORS
+    # if use_depth:
+    #     new_depth_camera_config = task_config.SIMULATOR.DEPTH_SENSOR.clone()
+    #     new_depth_camera_config.TYPE = task_config.TASK.DEPTH_SENSOR.TYPE#"DepthSensor"
+    #     new_depth_camera_config.NORMALIZE_DEPTH = normalize_depth
+    #     task_config.SIMULATOR.update({'DEPTH_SENSOR': new_depth_camera_config})
+    #     sensors.append('DEPTH_SENSOR')
 
-    task_config.SIMULATOR.AGENT_0.SENSORS = sensors
+    #task_config.SIMULATOR.AGENT_0.SENSORS = sensors
 
-    if has_target:
-        task_config.TASK.SENSORS = sensors_with_ids + ['CUSTOM_VISTARGET_SENSOR']
-        task_config.TASK.CUSTOM_VISTARGET_SENSOR = habitat.Config()
-        task_config.TASK.CUSTOM_VISTARGET_SENSOR.TYPE = 'CustomVisTargetSensor'
-        task_config.TASK.CUSTOM_VISTARGET_SENSOR.NUM_CAMERA = 1
-        task_config.TASK.CUSTOM_VISTARGET_SENSOR.WIDTH = task_config.SIMULATOR.RGB_SENSOR.WIDTH
-        task_config.TASK.CUSTOM_VISTARGET_SENSOR.HEIGHT = task_config.SIMULATOR.RGB_SENSOR.HEIGHT
-    else:
-        task_config.TASK.SENSORS.remove('CUSTOM_VISTARGET_SENSOR')
+    if 'IMAGEGOAL_SENSOR' in task_config.TASK.SENSORS:
+        #task_config.TASK.SENSORS = sensors_with_ids + [IMAGEGOAL_SENSOR]
+        #new_imagegoal_sensor_config.TASK.IMAGEGOAL_SENSOR = habitat.Config()
+        #task_config.TASK.IMAGEGOAL_SENSOR.TYPE = task_config.TASK.IMAGEGOAL_SENSOR.TYPE#'CustomVisTargetSensor'
+        task_config.TASK.IMAGEGOAL_SENSOR.NUM_CAMERA = 1
+        task_config.TASK.IMAGEGOAL_SENSOR.WIDTH = task_config.SIMULATOR.RGB_SENSOR.WIDTH
+        task_config.TASK.IMAGEGOAL_SENSOR.HEIGHT = task_config.SIMULATOR.RGB_SENSOR.HEIGHT
+    # else:
+    #     task_config.TASK.SENSORS.remove('CUSTOM_VISTARGET_SENSOR')
 
     task_config.TASK.SUCCESS = habitat.Config()
     if "STOP" not in task_config.TASK.POSSIBLE_ACTIONS:
@@ -61,7 +66,7 @@ def add_camera(task_config, normalize_depth=True, has_target=True):
     else:
         task_config.TASK.SUCCESS.TYPE = "Success"
     task_config.TASK.SUCCESS.SUCCESS_DISTANCE = task_config.TASK.SUCCESS_DISTANCE
-    task_config.TASK.DISTANCE_TO_GOAL.TYPE = 'Custom_DistanceToGoal'
+    #task_config.TASK.DISTANCE_TO_GOAL.TYPE = 'Custom_DistanceToGoal'
     return task_config
 
 def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
@@ -162,7 +167,7 @@ def construct_envs(config,env_class, mode='vectorenv', make_env_fn=make_env_fn, 
     eval_config.TASK_CONFIG.DATASET.SPLIT = 'val'
     eval_config.freeze()
 
-    dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE) # VisTargetNav-v1
+    dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE, config=config.TASK_CONFIG.DATASET) # VisTargetNav-v1
     training_scenes = config.TASK_CONFIG.DATASET.CONTENT_SCENES
     if "*" in config.TASK_CONFIG.DATASET.CONTENT_SCENES:
         training_scenes = dataset.get_scenes_to_load(config.TASK_CONFIG.DATASET) # "data/datasets/pointnav/gibson/v1/{split}/{split}.json.gz"

@@ -28,9 +28,9 @@ if TYPE_CHECKING:
     from torch import Tensor
 
 import habitat_sim
-from habitat.core.dataset import Episode
-from habitat.core.registry import registry
-from habitat.core.simulator import (
+from custom_habitat.core.dataset import Episode
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import (
     AgentState,
     Config,
     DepthSensor,
@@ -43,7 +43,7 @@ from habitat.core.simulator import (
     Simulator,
     VisualObservation,
 )
-from habitat.core.spaces import Space
+from custom_habitat.core.spaces import Space
 from habitat_sim.nav import NavMeshSettings
 from habitat_sim.utils.common import quat_from_coeffs, quat_to_magnum
 from habitat_sim.physics import MotionType
@@ -72,119 +72,167 @@ def overwrite_config(config_from: Config, config_to: Any) -> None:
         if hasattr(config_to, attr.lower()):
             setattr(config_to, attr.lower(), if_config_to_lower(value))
 
+# def overwrite_config(
+#     config_from: Config,
+#     config_to: Any,
+#     ignore_keys: Optional[Set[str]] = None,
+#     trans_dict: Optional[Dict[str, Callable]] = None,
+# ) -> None:
+#     r"""Takes Habitat Lab config and Habitat-Sim config structures. Overwrites
+#     Habitat-Sim config with Habitat Lab values, where a field name is present
+#     in lowercase. Mostly used to avoid :ref:`sim_cfg.field = hapi_cfg.FIELD`
+#     code.
+#     Args:
+#         config_from: Habitat Lab config node.
+#         config_to: Habitat-Sim config structure.
+#         ignore_keys: Optional set of keys to ignore in config_to
+#         trans_dict: A Dict of str, callable which can be used on any value that has a matching key if not in ignore_keys.
+#     """
 
-@registry.register_sensor
-class HabitatSimRGBSensor(RGBSensor):
-    sim_sensor_type: habitat_sim.SensorType
+#     def if_config_to_lower(config):
+#         if isinstance(config, Config):
+#             return {key.lower(): val for key, val in config.items()}
+#         else:
+#             return config
 
-    def __init__(self, config: Config) -> None:
-        self.sim_sensor_type = habitat_sim.SensorType.COLOR
-        super().__init__(config=config)
+#     for attr, value in config_from.items():
+#         low_attr = attr.lower()
+        
+#         # NOTE: the original code has a bug
+#         if ignore_keys is None or low_attr not in ignore_keys:
+#             if hasattr(config_to, low_attr):
+#                 # NOTE: the original code has a bug, assigning a str ("PINHOLE") to config_to.sensor_subtype which is a <class 'habitat_sim._ext.habitat_sim_bindings.SensorSubType'> object
+#                 # here the original SENSOR_SUBTYPE must be converted from str to a habitat_sim.SensorSubType instance.
+#                 # These three lines were deliberately added.
+                
+#                 if trans_dict is not None and low_attr in trans_dict:
+#                     setattr(config_to, low_attr, trans_dict[low_attr](value))
+#                 else:
+#                     if low_attr in "sensor_subtype":
+#                         if isinstance(value, str):
+#                             value = eval("habitat_sim.SensorSubType."+value)
+#                     setattr(config_to, low_attr, if_config_to_lower(value))
+#             else:
+#                 raise NameError(
+#                     f"""{low_attr} is not found on habitat_sim but is found on habitat_lab config.
+#                     It's also not in the list of keys to ignore: {ignore_keys}
+#                     Did you make a typo in the config?
+#                     If not the version of Habitat Sim may not be compatible with Habitat Lab version: {config_from}
+#                     """
+#                 )
 
-    def _get_observation_space(self, *args: Any, **kwargs: Any) -> Box:
-        return spaces.Box(
-            low=0,
-            high=255,
-            shape=(self.config.HEIGHT, self.config.WIDTH, RGBSENSOR_DIMENSION),
-            dtype=np.uint8,
-        )
+# @registry.register_sensor
+# class HabitatSimRGBSensor(RGBSensor):
+#     sim_sensor_type: habitat_sim.SensorType
 
-    def get_observation(
-        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
-    ) -> VisualObservation:
-        obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
-        check_sim_obs(obs, self)
+#     def __init__(self, config: Config) -> None:
+#         self.sim_sensor_type = habitat_sim.SensorType.COLOR
+#         super().__init__(config=config)
 
-        # remove alpha channel
-        obs = obs[:, :, :RGBSENSOR_DIMENSION]  # type: ignore[index]
-        return obs
+#     def _get_observation_space(self, *args: Any, **kwargs: Any) -> Box:
+#         return spaces.Box(
+#             low=0,
+#             high=255,
+#             shape=(self.config.HEIGHT, self.config.WIDTH, RGBSENSOR_DIMENSION),
+#             dtype=np.uint8,
+#         )
 
+#     def get_observation(
+#         self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
+#     ) -> VisualObservation:
+#         obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
+#         check_sim_obs(obs, self)
 
-@registry.register_sensor
-class HabitatSimDepthSensor(DepthSensor):
-    sim_sensor_type: habitat_sim.SensorType
-    min_depth_value: float
-    max_depth_value: float
-
-    def __init__(self, config: Config) -> None:
-        self.sim_sensor_type = habitat_sim.SensorType.DEPTH
-
-        if config.NORMALIZE_DEPTH:
-            self.min_depth_value = 0
-            self.max_depth_value = 1
-        else:
-            self.min_depth_value = config.MIN_DEPTH
-            self.max_depth_value = config.MAX_DEPTH
-
-        super().__init__(config=config)
-
-    def _get_observation_space(self, *args: Any, **kwargs: Any) -> Box:
-        return spaces.Box(
-            low=self.min_depth_value,
-            high=self.max_depth_value,
-            shape=(self.config.HEIGHT, self.config.WIDTH, 1),
-            dtype=np.float32,
-        )
-
-    def get_observation(
-        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
-    ) -> VisualObservation:
-        obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
-        check_sim_obs(obs, self)
-        if isinstance(obs, np.ndarray):
-            obs = np.clip(obs, self.config.MIN_DEPTH, self.config.MAX_DEPTH)
-
-            obs = np.expand_dims(
-                obs, axis=2
-            )  # make depth observation a 3D array
-        else:
-            obs = obs.clamp(self.config.MIN_DEPTH, self.config.MAX_DEPTH)  # type: ignore[attr-defined]
-
-            obs = obs.unsqueeze(-1)  # type: ignore[attr-defined]
-
-        if self.config.NORMALIZE_DEPTH:
-            # normalize depth observation to [0, 1]
-            obs = (obs - self.config.MIN_DEPTH) / (
-                self.config.MAX_DEPTH - self.config.MIN_DEPTH
-            )
-
-        return obs
+#         # remove alpha channel
+#         obs = obs[:, :, :RGBSENSOR_DIMENSION]  # type: ignore[index]
+#         return obs
 
 
-@registry.register_sensor
-class HabitatSimSemanticSensor(SemanticSensor):
-    sim_sensor_type: habitat_sim.SensorType
+# @registry.register_sensor
+# class HabitatSimDepthSensor(DepthSensor):
+#     sim_sensor_type: habitat_sim.SensorType
+#     min_depth_value: float
+#     max_depth_value: float
 
-    def __init__(self, config):
-        self.sim_sensor_type = habitat_sim.SensorType.SEMANTIC
-        super().__init__(config=config)
+#     def __init__(self, config: Config) -> None:
+#         self.sim_sensor_type = habitat_sim.SensorType.DEPTH
 
-    def _get_observation_space(self, *args: Any, **kwargs: Any):
-        return spaces.Box(
-            low=np.iinfo(np.uint32).min,
-            high=np.iinfo(np.uint32).max,
-            shape=(self.config.HEIGHT, self.config.WIDTH),
-            dtype=np.uint32,
-        )
+#         if config.NORMALIZE_DEPTH:
+#             self.min_depth_value = 0
+#             self.max_depth_value = 1
+#         else:
+#             self.min_depth_value = config.MIN_DEPTH
+#             self.max_depth_value = config.MAX_DEPTH
 
-    def get_observation(
-        self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
-    ) -> VisualObservation:
-        obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
-        check_sim_obs(obs, self)
-        return obs
+#         super().__init__(config=config)
+
+#     def _get_observation_space(self, *args: Any, **kwargs: Any) -> Box:
+#         return spaces.Box(
+#             low=self.min_depth_value,
+#             high=self.max_depth_value,
+#             shape=(self.config.HEIGHT, self.config.WIDTH, 1),
+#             dtype=np.float32,
+#         )
+
+#     def get_observation(
+#         self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
+#     ) -> VisualObservation:
+#         obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
+#         check_sim_obs(obs, self)
+#         if isinstance(obs, np.ndarray):
+#             obs = np.clip(obs, self.config.MIN_DEPTH, self.config.MAX_DEPTH)
+
+#             obs = np.expand_dims(
+#                 obs, axis=2
+#             )  # make depth observation a 3D array
+#         else:
+#             obs = obs.clamp(self.config.MIN_DEPTH, self.config.MAX_DEPTH)  # type: ignore[attr-defined]
+
+#             obs = obs.unsqueeze(-1)  # type: ignore[attr-defined]
+
+#         if self.config.NORMALIZE_DEPTH:
+#             # normalize depth observation to [0, 1]
+#             obs = (obs - self.config.MIN_DEPTH) / (
+#                 self.config.MAX_DEPTH - self.config.MIN_DEPTH
+#             )
+
+#         return obs
 
 
-def check_sim_obs(obs: ndarray, sensor: Sensor) -> None:
-    assert obs is not None, (
-        "Observation corresponding to {} not present in "
-        "simulator's observations".format(sensor.uuid)
-    )
+# @registry.register_sensor
+# class HabitatSimSemanticSensor(SemanticSensor):
+#     sim_sensor_type: habitat_sim.SensorType
+
+#     def __init__(self, config):
+#         self.sim_sensor_type = habitat_sim.SensorType.SEMANTIC
+#         super().__init__(config=config)
+
+#     def _get_observation_space(self, *args: Any, **kwargs: Any):
+#         return spaces.Box(
+#             low=np.iinfo(np.uint32).min,
+#             high=np.iinfo(np.uint32).max,
+#             shape=(self.config.HEIGHT, self.config.WIDTH),
+#             dtype=np.uint32,
+#         )
+
+#     def get_observation(
+#         self, sim_obs: Dict[str, Union[ndarray, bool, "Tensor"]]
+#     ) -> VisualObservation:
+#         obs = cast(Optional[VisualObservation], sim_obs.get(self.uuid, None))
+#         check_sim_obs(obs, self)
+#         return obs
 
 
-HabitatSimVizSensors = Union[
-    HabitatSimRGBSensor, HabitatSimDepthSensor, HabitatSimSemanticSensor
-]
+# def check_sim_obs(obs: ndarray, sensor: Sensor) -> None:
+#     assert obs is not None, (
+#         "Observation corresponding to {} not present in "
+#         "simulator's observations".format(sensor.uuid)
+#     )
+
+
+# HabitatSimVizSensors = Union[
+#     HabitatSimRGBSensor, HabitatSimDepthSensor, HabitatSimSemanticSensor
+# ]
 
 
 @registry.register_simulator(name="Sim-v0")

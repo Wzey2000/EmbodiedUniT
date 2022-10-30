@@ -18,8 +18,8 @@ from torch import distributed as distrib
 from torch import nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
-from habitat import Config, logger
-from habitat.utils import profiling_wrapper
+from custom_habitat import Config, logger
+from custom_habitat.utils import profiling_wrapper
 from custom_habitat_baselines.common.baseline_registry import baseline_registry
 from custom_habitat_baselines.common.environments import get_env_class
 from custom_habitat_baselines.common.obs_transformers import (

@@ -1,5 +1,6 @@
+from multiprocessing import dummy
 from typing import Optional, Type
-from habitat import Config, Dataset
+from custom_habitat import Config, Dataset
 import cv2
 import matplotlib
 import matplotlib.pyplot as plt
@@ -7,31 +8,32 @@ from utils.vis_utils import observations_to_image, append_text_to_image
 from gym.spaces.dict import Dict as SpaceDict
 from gym.spaces.box import Box
 from gym.spaces.discrete import Discrete
-from habitat.core.spaces import ActionSpace, EmptySpace
+from custom_habitat.core.spaces import ActionSpace, EmptySpace
 import numpy as np
-from env_utils.custom_habitat_env import RLEnv, MIN_DIST, MAX_DIST
-import habitat
-from habitat.utils.visualizations.utils import images_to_video
-from habitat.utils.visualizations import maps, utils
+from custom_habitat_baselines.utils.env_utils import RLEnv
+from env_utils.custom_habitat_env import  MIN_DIST, MAX_DIST
+
+#from env_utils.custom_habitat_env import RLEnv, MIN_DIST, MAX_DIST
+import custom_habitat as habitat
+from custom_habitat.utils.visualizations.utils import images_to_video
+from custom_habitat.utils.visualizations import maps, utils
 
 from env_utils.custom_habitat_map import TopDownGraphMap
-from habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
+from custom_habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
 import env_utils.noisy_actions
-from habitat.sims.habitat_simulator.actions import HabitatSimActions
+from custom_habitat.sims.habitat_simulator.actions import HabitatSimActions
 from habitat_sim.utils.common import quat_to_coeffs
 
 import imageio
 import os
-import time
-import pickle
-import quaternion as q
-import scipy
-from habitat.tasks.utils import cartesian_to_polar, quaternion_to_rotation
-from habitat.utils.geometry_utils import (
+from custom_habitat.tasks.utils import cartesian_to_polar, quaternion_to_rotation
+from custom_habitat.utils.geometry_utils import (
     quaternion_from_coeff,
     quaternion_rotate_vector,
 )
-import torch
+
+from custom_habitat.core.registry import registry
+
 
 class SearchEnv(RLEnv):
     metadata = {'render.modes': ['rgb_array']}
@@ -59,7 +61,7 @@ class SearchEnv(RLEnv):
         if 'TOP_DOWN_MAP' in config.TASK_CONFIG.TASK.MEASUREMENTS:
             task_config.TASK.MEASUREMENTS = [k for k in task_config.TASK.MEASUREMENTS if
                                                     'TOP_DOWN_MAP' != k]
-        task_config.SIMULATOR.ACTION_SPACE_CONFIG = "CustomActionSpaceConfiguration"
+        # task_config.SIMULATOR.ACTION_SPACE_CONFIG = "CustomActionSpaceConfiguration"
         task_config.TASK.POSSIBLE_ACTIONS = task_config.TASK.POSSIBLE_ACTIONS + ['NOISY_FORWARD', 'NOISY_RIGHT', 'NOISY_LEFT']
         task_config.TASK.ACTIONS.NOISY_FORWARD = habitat.config.Config()
         task_config.TASK.ACTIONS.NOISY_FORWARD.TYPE = "NOISYFORWARD"
@@ -114,20 +116,22 @@ class SearchEnv(RLEnv):
         """
         obs_dict = {
                 'rgb': Box(low=0, high=256, shape=(240, 320, 3), dtype=np.float32),
-        'depth': Box(low=0, high=256, shape=(240, 320, 1), dtype=np.float32),
-        'target_goal': Box(low=0, high=256, shape=(240, 320, 3), dtype=np.float32),
+                'depth': Box(low=0, high=256, shape=(240, 320, 1), dtype=np.float32),
+                'image_goal': Box(low=0, high=256, shape=(240, 320, 3), dtype=np.float32),
                 'step': Box(low=np.array(0),high=np.array(500), dtype=np.float32),
-                'prev_act': Box(low=np.array(-1), high=np.array(self.action_space.n), dtype=np.int32),
-                'gt_action': Box(low=np.array(-1), high=np.array(self.action_space.n), dtype=np.int32),
+                #'prev_act': Box(low=np.array(-1), high=np.array(self.action_space.n), dtype=np.int32),
+                #'gt_action': Box(low=np.array(-1), high=np.array(self.action_space.n), dtype=np.int32),
+                'demonstration': Discrete(1),
+                "inflection_weight": Discrete(1),
                 'target_pose': Box(low=-np.Inf, high=np.Inf, shape=(3,), dtype=np.float32),
-                'distance': Box(low=-np.Inf, high=np.Inf, shape=(1,), dtype=np.float32),
+                'distance': Discrete(1),#Box(low=-np.Inf, high=np.Inf, shape=(1,), dtype=np.float32),
                 "compass": Box(low=-np.pi, high=np.pi, shape=(1,), dtype=np.float32),
-        "gps": Box(
-            low=np.finfo(np.float32).min,
-            high=np.finfo(np.float32).max,
-            shape=(config.TASK_CONFIG.TASK.GPS_SENSOR.DIMENSIONALITY,),
-            dtype=np.float32),
-            }
+                "gps": Box(
+                    low=np.finfo(np.float32).min,
+                    high=np.finfo(np.float32).max,
+                    shape=(config.TASK_CONFIG.TASK.GPS_SENSOR.DIMENSIONALITY,),
+                    dtype=np.float32),
+                    }
         
         self.mapper = self.habitat_env.task.measurements.measures['top_down_map'] if self.render_map else None
 
@@ -220,7 +224,7 @@ class SearchEnv(RLEnv):
     def reset(self):
         self._previous_action = -1
         self.time_t = 0
-        observations = super().reset()
+        obs = super().reset()
 
         self.num_goals = len(self.current_episode.goals)
         self._previous_measure = self.get_dist(self.curr_goal.position)
@@ -235,7 +239,7 @@ class SearchEnv(RLEnv):
         self.prev_position = self.current_position.copy()
         self.prev_rotation = self.current_rotation.copy()
         self.positions = [self.current_position]
-        self.obs = self.process_obs(observations)
+        self.obs = self.process_obs(obs)
         self.has_log_info = None
         self.imgs = []
         if self.recording_now:
@@ -251,17 +255,19 @@ class SearchEnv(RLEnv):
         return sim_scene
 
     def process_obs(self, obs):
-        obs['episode_id'] = self.current_episode.episode_id
+        # obs['episode_id'] = self.current_episode.episode_id
         obs['step'] = self.time_t
-        obs['position'] = self.current_position # habitat_env.sim.get_agent_state().position
-        obs['rotation'] = self.current_rotation.components
+        # Compass and GPS sensors are used, so there is no need to explicitly get agent poses here
+        # obs['position'] = self.current_position # habitat_env.sim.get_agent_state().position
+        # obs['rotation'] = self.current_rotation.components
         obs['target_pose'] = self.curr_goal.position
         obs['distance'] = self.get_dist(obs['target_pose'])
-        # obs['target_goal'] = obs['target_goal'][0] if self.num_goals == 1 else obs['target_goal']
+        #obs['target_idx'] = obs['target_goal'][0] if self.num_goals == 1 else obs['target_goal']
 
         # When the agent finishes navigating to the final goal, self.curr_goal_idx will exceed the maximum index of goals.
         # So we take minimum here to avoid index out of range
-        obs['target_goal'] = obs['target_goal'][self.curr_goal_idx]
+        obs['image_goal'] = obs['image_goal'][self.curr_goal_idx]
+
         if self.return_have_been:
             if len(self.positions) < 10:
                 have_been = False
@@ -275,18 +281,18 @@ class SearchEnv(RLEnv):
         if self.return_target_dist_score:
             target_dist_score = np.maximum(1-np.array(obs['distance'])/2.,0.0)
             obs['target_dist_score'] = np.array(target_dist_score).astype(np.float32).reshape(1)
+        
         return obs
 
     def step(self, action):
         if isinstance(action, dict):
             action = action['action']
         self._previous_action = action
-
         obs, reward, done, self.info = super().step(self.action_dict[action]) # super().step() is defined in line 469 in custom_habitat_env.py
 
         self.time_t += 1
         self.info['length'] = self.time_t * done
-        self.info['episode'] = int(self.current_episode.episode_id)
+        self.info['episode'] = self.current_episode.episode_id # gibson episode ids are ints while mp3d episode ids are strings
         self.info['distance_to_goal'] = self._previous_measure
         self.info['step'] = self.time_t
         self.positions.append(self.current_position)
@@ -521,9 +527,9 @@ class SearchEnv(RLEnv):
         img = observations_to_image(self.obs, info, mode='panoramic')
         str_action = 'XX'
         if 'STOP' not in self.habitat_env.task.actions:
-            action_list = ["MF", 'TL', 'TR']
+            action_list = ["MF", 'TL', 'TR', 'LU', 'LD']
         else:
-            action_list = ["ST", "MF", 'TL', 'TR']
+            action_list = ["ST", "MF", 'TL', 'TR', 'LU', 'LD']
         if self._previous_action != -1:
             str_action = str(action_list[self._previous_action])
 
@@ -537,8 +543,8 @@ class SearchEnv(RLEnv):
             txt += '                                 '
         if hasattr(self.mapper, 'node_list'):
             if self.mapper.node_list is None:
-                txt += ' node : NNNN'
-                txt += ' curr : NNNN'
+                txt += ' node : ...'
+                txt += ' curr : ...'
             else:
                 num_node = len(self.mapper.node_list)
                 txt += ' node : %03d' % (num_node)

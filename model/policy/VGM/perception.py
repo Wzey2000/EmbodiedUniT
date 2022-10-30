@@ -431,20 +431,12 @@ class Perception(nn.Module):
             tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
             encoder = BertModel.from_pretrained("bert-base-multilingual-cased")
 
-<<<<<<< Updated upstream
-            self.reduce = nn.Linear(768, cfg.transformer.hidden_dim)
-=======
             self.reduce = nn.Linear(768, config.transformer.hidden_dim)
->>>>>>> Stashed changes
             with torch.no_grad():
                 inputs = tokenizer('Go to ', return_tensors="pt")
                 outputs = encoder(**inputs)
                 self.imagenav_instruc_emb = outputs.last_hidden_state # 1 x 5 x 768
 
-<<<<<<< Updated upstream
-        # if cfg.transformer.with_tesk_query:
-        #     self.image_nav_query = nn.Embedding(1,cfg.transformer.hidden_dim)
-=======
             self.task_embedding = torch.nn.Embedding(num_embeddings=1, embedding_dim=config.transformer.hidden_dim)
 
             encoder_layer = nn.TransformerEncoderLayer(
@@ -464,7 +456,6 @@ class Perception(nn.Module):
                 dropout=config.transformer.dropout)
         # if config.transformer.with_tesk_query:
         #     self.image_nav_query = nn.Embedding(1,config.transformer.hidden_dim)
->>>>>>> Stashed changes
         
 
     def forward(self, observations, env_global_node, return_features=False, disable_forgetting=False): # without memory

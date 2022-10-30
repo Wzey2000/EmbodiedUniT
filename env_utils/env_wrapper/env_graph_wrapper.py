@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from model.PCL.resnet_pcl import resnet18
 import os
 # this wrapper comes after vectorenv
-from habitat.core.vector_env import VectorEnv
+from custom_habitat.core.vector_env import VectorEnv
 from env_utils.env_wrapper.graph import Graph
 from utils.encoder_loaders import load_PCL_encoder, load_CRL_encoder
 

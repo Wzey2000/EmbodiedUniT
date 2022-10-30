@@ -10,7 +10,7 @@ and ``reset()`` methods.
 
 from typing import Any, Dict, Union
 
-from habitat.core.simulator import Observations
+from custom_habitat.core.simulator import Observations
 
 
 class Agent:

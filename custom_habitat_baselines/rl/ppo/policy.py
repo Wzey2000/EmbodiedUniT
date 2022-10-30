@@ -9,16 +9,16 @@ import torch
 from gym import spaces
 from torch import nn as nn
 
-from habitat.config import Config
-from habitat.tasks.nav.nav import (
+from custom_habitat.config import Config
+from custom_habitat.tasks.nav.nav import (
     ImageGoalSensor,
     IntegratedPointGoalGPSAndCompassSensor,
     PointGoalSensor,
 )
-from habitat_baselines.common.baseline_registry import baseline_registry
-from habitat_baselines.rl.models.rnn_state_encoder import RNNStateEncoder
-from habitat_baselines.rl.models.simple_cnn import SimpleCNN
-from habitat_baselines.utils.common import CategoricalNet
+#from custom_habitat_baselines.common.baseline_registry import baseline_registry
+from custom_habitat_baselines.rl.models.rnn_state_encoder import RNNStateEncoder
+from custom_habitat_baselines.rl.models.simple_cnn import SimpleCNN
+from custom_habitat_baselines.utils.common import CategoricalNet
 
 
 class Policy(nn.Module, metaclass=abc.ABCMeta):
@@ -104,7 +104,7 @@ class CriticHead(nn.Module):
         return self.fc(x)
 
 
-@baseline_registry.register_policy
+#@baseline_registry.register_policy
 class PointNavBaselinePolicy(Policy):
     def __init__(
         self,

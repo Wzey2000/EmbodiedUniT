@@ -10,11 +10,11 @@ from typing import Dict, List, Any
 import attr
 
 import habitat_sim
-from habitat.core.registry import registry
-from habitat.core.simulator import ActionSpaceConfiguration
-from habitat.core.utils import Singleton
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import ActionSpaceConfiguration
+from custom_habitat.core.utils import Singleton
 
-from habitat.core.embodied_task import SimulatorTaskAction
+from custom_habitat.core.embodied_task import SimulatorTaskAction
 from habitat_sim.agent.controls.controls import ActuationSpec
 
 

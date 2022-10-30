@@ -13,9 +13,9 @@ import os
 from collections import defaultdict
 from typing import Dict, Optional
 
-from habitat.config.default import get_config
-from habitat.core.agent import Agent
-from habitat.core.env import Env
+from custom_habitat.config.default import get_config
+from custom_habitat.core.agent import Agent
+from custom_habitat.core.env import Env
 
 
 class Benchmark:

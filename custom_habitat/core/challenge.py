@@ -6,8 +6,8 @@
 
 import os
 
-from habitat.core.benchmark import Benchmark
-from habitat.core.logging import logger
+from custom_habitat.core.benchmark import Benchmark
+from custom_habitat.core.logging import logger
 
 
 class Challenge(Benchmark):

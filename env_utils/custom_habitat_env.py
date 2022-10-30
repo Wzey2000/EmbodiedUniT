@@ -13,14 +13,14 @@ import numpy as np
 from gym.spaces.dict import Dict as SpaceDict
 from gym.spaces.discrete import Discrete
 
-from habitat.config import Config
-from habitat.core.dataset import Dataset, Episode, EpisodeIterator
-from habitat.tasks.nav.nav import NavigationEpisode, NavigationGoal
-from habitat.core.embodied_task import EmbodiedTask, Metrics
-from habitat.core.simulator import Observations, Simulator
-from habitat.datasets import make_dataset
-from habitat.sims import make_sim
-from habitat.tasks import make_task
+from custom_habitat.config import Config
+from custom_habitat.core.dataset import Dataset, Episode, EpisodeIterator
+from custom_habitat.tasks.nav.nav import NavigationEpisode, NavigationGoal
+from custom_habitat.core.embodied_task import EmbodiedTask, Metrics
+from custom_habitat.core.simulator import Observations, Simulator
+from custom_habitat.datasets import make_dataset
+from custom_habitat.sims import make_sim
+from custom_habitat.tasks import make_task
 import os
 from habitat_sim.utils.common import quat_to_coeffs
 import quaternion as q
@@ -413,7 +413,6 @@ class RLEnv(gym.Env):
         :param config: config to construct `Env`
         :param dataset: dataset to construct `Env`.
         """
-
         self._env = Env(config)
         self.observation_space = self._env.observation_space
         self.action_space = self._env.action_space

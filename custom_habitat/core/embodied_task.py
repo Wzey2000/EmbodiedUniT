@@ -12,11 +12,11 @@ from typing import Any, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 
-from habitat.core.logging import logger
-from habitat.config import Config
-from habitat.core.dataset import Dataset, Episode
-from habitat.core.simulator import Observations, SensorSuite, Simulator
-from habitat.core.spaces import ActionSpace, EmptySpace, Space
+from custom_habitat.core.logging import logger
+from custom_habitat.config import Config
+from custom_habitat.core.dataset import Dataset, Episode
+from custom_habitat.core.simulator import Observations, SensorSuite, Simulator
+from custom_habitat.core.spaces import ActionSpace, EmptySpace, Space
 
 
 class Action:
@@ -228,7 +228,7 @@ class EmbodiedTask:
     def __init__(
         self, config: Config, sim: Simulator, dataset: Optional[Dataset] = None
     ) -> None:
-        from habitat.core.registry import registry
+        from custom_habitat.core.registry import registry
 
         self._config = config
         self._sim = sim
@@ -265,7 +265,7 @@ class EmbodiedTask:
 
         entities = OrderedDict()
         for entity_name in entity_names:
-            entity_cfg = getattr(entities_config, entity_name)
+            entity_cfg = getattr(entities_config, entity_name)            
             entity_type = register_func(entity_cfg.TYPE)
             assert (
                 entity_type is not None

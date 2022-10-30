@@ -1,5 +1,5 @@
-from habitat.core.registry import registry
-from habitat.core.simulator import Simulator
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import Simulator
 
 # from habitat.sims.habitat_simulator.actions import (
 #     HabitatSimV1ActionSpaceConfiguration,
@@ -16,8 +16,8 @@ def _try_register_habitat_sim():
         habitat_sim_import_error = e
 
     if has_habitat_sim:
-        from habitat.sims.pickplace.simulator import PickPlaceSim
-        from habitat.sims.habitat_simulator.actions import (  # noqa: F401
+        from custom_habitat.sims.pickplace.simulator import PickPlaceSim
+        from custom_habitat.sims.habitat_simulator.actions import (  # noqa: F401
             HabitatSimV1ActionSpaceConfiguration,
         )
     else:

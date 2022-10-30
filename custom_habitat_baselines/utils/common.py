@@ -30,11 +30,11 @@ from PIL import Image
 from torch import Size, Tensor
 from torch import nn as nn
 
-from habitat import logger
-from habitat.core.dataset import Episode
-from habitat.utils import profiling_wrapper
-from habitat.utils.visualizations.utils import images_to_video
-from habitat_baselines.common.tensorboard_utils import TensorboardWriter
+from custom_habitat import logger
+from custom_habitat.core.dataset import Episode
+from custom_habitat.utils import profiling_wrapper
+from custom_habitat.utils.visualizations.utils import images_to_video
+from custom_habitat_baselines.common.tensorboard_utils import TensorboardWriter
 
 
 class Flatten(nn.Module):
@@ -121,6 +121,7 @@ def batch_obs(
 
     for obs in observations:
         for sensor in obs:
+            if type(obs[sensor]) == str: continue
             batch[sensor].append(_to_tensor(obs[sensor]))
 
     batch_t: Dict[str, torch.Tensor] = {}

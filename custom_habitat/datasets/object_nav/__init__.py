@@ -4,8 +4,8 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from habitat.core.dataset import Dataset
-from habitat.core.registry import registry
+from custom_habitat.core.dataset import Dataset
+from custom_habitat.core.registry import registry
 
 
 # TODO(akadian): This is a result of moving SimulatorActions away from core
@@ -17,7 +17,7 @@ from habitat.core.registry import registry
 # Post that PR we would no longer need try register blocks.
 def _try_register_objectnavdatasetv1():
     try:
-        from habitat.datasets.object_nav.object_nav_dataset import (  # noqa: F401
+        from custom_habitat.datasets.object_nav.object_nav_dataset import (  # noqa: F401
             ObjectNavDatasetV1,
         )
 

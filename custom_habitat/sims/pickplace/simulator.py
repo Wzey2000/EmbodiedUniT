@@ -16,13 +16,13 @@ from habitat_sim.nav import NavMeshSettings
 from habitat_sim.utils.common import quat_from_coeffs, quat_to_magnum, quat_to_coeffs, quat_from_magnum
 from habitat_sim.physics import MotionType
 
-from habitat.core.registry import registry
-from habitat.core.simulator import (
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import (
     Config,
     Observations
 )
-from habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
-from habitat.tasks.pickplace.pickplace import ObjectStateSpec
+from custom_habitat.sims.habitat_simulator.habitat_simulator import HabitatSim
+from custom_habitat.tasks.pickplace.pickplace import ObjectStateSpec
 
 
 @registry.register_simulator(name="PickPlaceSim-v0")

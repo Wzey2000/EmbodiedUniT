@@ -10,8 +10,8 @@ import torch
 from torch import Tensor
 from torch import distributed as distrib
 
-from habitat_baselines.common.rollout_storage import RolloutStorage
-from habitat_baselines.rl.ppo import PPO
+from custom_habitat_baselines.common.rollout_storage import RolloutStorage
+from custom_habitat_baselines.rl.ppo import PPO
 
 EPS_PPO = 1e-5
 

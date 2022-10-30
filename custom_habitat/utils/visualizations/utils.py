@@ -14,9 +14,9 @@ import imageio
 import numpy as np
 import tqdm
 
-from habitat.core.logging import logger
-from habitat.core.utils import try_cv2_import
-from habitat.utils.visualizations import maps
+from custom_habitat.core.logging import logger
+from custom_habitat.core.utils import try_cv2_import
+from custom_habitat.utils.visualizations import maps
 from habitat_sim.utils import viz_utils as vut
 
 cv2 = try_cv2_import()

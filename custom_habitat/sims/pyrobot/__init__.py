@@ -4,8 +4,8 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from habitat.core.registry import registry
-from habitat.core.simulator import Simulator
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import Simulator
 
 
 def _try_register_pyrobot():
@@ -18,7 +18,7 @@ def _try_register_pyrobot():
         pyrobot_import_error = e
 
     if has_pyrobot:
-        from habitat.sims.pyrobot.pyrobot import PyRobot  # noqa: F401
+        from custom_habitat.sims.pyrobot.pyrobot import PyRobot  # noqa: F401
     else:
 
         @registry.register_simulator(name="PyRobot-v0")

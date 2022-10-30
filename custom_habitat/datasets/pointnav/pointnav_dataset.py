@@ -9,10 +9,10 @@ import json
 import os
 from typing import List, Optional
 
-from habitat.config import Config
-from habitat.core.dataset import ALL_SCENES_MASK, Dataset
-from habitat.core.registry import registry
-from habitat.tasks.nav.nav import (
+from custom_habitat.config import Config
+from custom_habitat.core.dataset import ALL_SCENES_MASK, Dataset
+from custom_habitat.core.registry import registry
+from custom_habitat.tasks.nav.nav import (
     NavigationEpisode,
     NavigationGoal,
     ShortestPathPoint,

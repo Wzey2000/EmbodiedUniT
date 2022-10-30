@@ -7,10 +7,10 @@
 import random
 from typing import List, Type, Union
 
-import habitat
-from habitat import Config, Env, RLEnv, VectorEnv, make_dataset, logger
+#import habitat
+from custom_habitat import Config, Env, RLEnv, VectorEnv, make_dataset, logger
 
-
+from env_utils.make_env_utils import add_camera
 def make_env_fn(
     config: Config, env_class: Union[Type[Env], Type[RLEnv]]
 ) -> Union[Env, RLEnv]:
@@ -53,7 +53,7 @@ def construct_envs(
     num_processes = config.NUM_PROCESSES
     configs = []
     env_classes = [env_class for _ in range(num_processes)]
-    dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE)
+    dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE, config=config.TASK_CONFIG.DATASET)
     scenes = config.TASK_CONFIG.DATASET.CONTENT_SCENES
     if "*" in config.TASK_CONFIG.DATASET.CONTENT_SCENES:
         scenes = dataset.get_scenes_to_load(config.TASK_CONFIG.DATASET)
@@ -87,16 +87,17 @@ def construct_envs(
         if len(scenes) > 0:
             task_config.DATASET.CONTENT_SCENES = scene_splits[i]
 
+        task_config = add_camera(task_config)
+        
         task_config.SIMULATOR.HABITAT_SIM_V0.GPU_DEVICE_ID = (
             config.SIMULATOR_GPU_ID
         )
 
         task_config.SIMULATOR.AGENT_0.SENSORS = config.SENSORS
-
         proc_config.freeze()
         configs.append(proc_config)
 
-    envs = habitat.VectorEnv(
+    envs = VectorEnv(
         make_env_fn=make_env_fn,
         env_fn_args=tuple(zip(configs, env_classes)),
         workers_ignore_signals=workers_ignore_signals,
@@ -126,7 +127,7 @@ def construct_ddp_envs(
     num_processes = config.NUM_PROCESSES
     configs = []
     env_classes = [env_class for _ in range(num_processes)]
-    dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE)
+    dataset = make_dataset(config.TASK_CONFIG.DATASET.TYPE, config=config.TASK_CONFIG.DATASET)
     scenes = config.TASK_CONFIG.DATASET.CONTENT_SCENES
     if "*" in config.TASK_CONFIG.DATASET.CONTENT_SCENES:
         scenes = dataset.get_scenes_to_load(config.TASK_CONFIG.DATASET)

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from model.rnn_state_encoder import RNNStateEncoder
-from habitat_baselines.utils.common import CategoricalNet
+from custom_habitat_baselines.utils.common import CategoricalNet
 from model.resnet import resnet
 from model.resnet.resnet import ResNetEncoder
 from .perception import Perception

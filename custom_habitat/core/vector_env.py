@@ -28,12 +28,12 @@ import gym
 import numpy as np
 from gym import spaces
 
-import habitat
-from habitat.config import Config
-from habitat.core.env import Env, RLEnv
-from habitat.core.logging import logger
-from habitat.core.utils import tile_images
-from habitat.utils import profiling_wrapper
+import custom_habitat
+from custom_habitat.config import Config
+from custom_habitat.core.env import Env, RLEnv
+from custom_habitat.core.logging import logger
+from custom_habitat.core.utils import tile_images
+from custom_habitat.utils import profiling_wrapper
 
 try:
     # Use torch.multiprocessing if we can.
@@ -66,9 +66,9 @@ SCENE_COMMAND = "current_scene"
 
 
 def _make_env_fn(
-    config: Config, dataset: Optional[habitat.Dataset] = None, rank: int = 0
+    config: Config, dataset: Optional[custom_habitat.Dataset] = None, rank: int = 0
 ) -> Env:
-    """Constructor for default habitat :ref:`env.Env`.
+    """Constructor for default custom_habitat :ref:`env.Env`.
 
     :param config: configuration for environment.
     :param dataset: dataset for environment.
@@ -200,9 +200,9 @@ class VectorEnv:
             command, data = connection_read_fn()
             while command != CLOSE_COMMAND:
                 if command == STEP_COMMAND:
-                    # different step methods for habitat.RLEnv and habitat.Env
-                    if isinstance(env, (habitat.RLEnv, gym.Env)):
-                        # habitat.RLEnv
+                    # different step methods for custom_habitat.RLEnv and custom_habitat.Env
+                    if isinstance(env, (custom_habitat.RLEnv, gym.Env)):
+                        # custom_habitat.RLEnv
                         observations, reward, done, info = env.step(**data)
                         if auto_reset_done and done:
                             observations = env.reset()
@@ -212,8 +212,8 @@ class VectorEnv:
                             connection_write_fn(
                                 (observations, reward, done, info)
                             )
-                    elif isinstance(env, habitat.Env):  # type: ignore
-                        # habitat.Env
+                    elif isinstance(env, custom_habitat.Env):  # type: ignore
+                        # custom_habitat.Env
                         observations = env.step(**data)
                         if auto_reset_done and env.episode_over:
                             observations = env.reset()
@@ -600,7 +600,7 @@ class VectorEnv:
         images = [read_fn() for read_fn in self._connection_read_fns]
         tile = tile_images(images)
         if mode == "human":
-            from habitat.core.utils import try_cv2_import
+            from custom_habitat.core.utils import try_cv2_import
 
             cv2 = try_cv2_import()
 

@@ -10,8 +10,8 @@ import numpy as np
 import pyrobot
 from gym import Space, spaces
 
-from habitat.core.registry import registry
-from habitat.core.simulator import (
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import (
     BumpSensor,
     Config,
     DepthSensor,
@@ -19,7 +19,7 @@ from habitat.core.simulator import (
     SensorSuite,
     Simulator,
 )
-from habitat.core.utils import center_crop, try_cv2_import
+from custom_habitat.core.utils import center_crop, try_cv2_import
 
 cv2 = try_cv2_import()
 

@@ -7,7 +7,7 @@
 import numpy as np
 import quaternion  # noqa # pylint: disable=unused-import
 
-from habitat.sims.habitat_simulator.actions import HabitatSimActions
+from custom_habitat.sims.habitat_simulator.actions import HabitatSimActions
 
 
 def quaternion_to_rotation(q_r, q_i, q_j, q_k):

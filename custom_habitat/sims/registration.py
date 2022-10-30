@@ -4,11 +4,11 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-from habitat.core.logging import logger
-from habitat.core.registry import registry
-from habitat.sims.habitat_simulator import _try_register_habitat_sim
-from habitat.sims.pyrobot import _try_register_pyrobot
-from habitat.sims.pickplace import _try_register_pickplace_sim
+from custom_habitat.core.logging import logger
+from custom_habitat.core.registry import registry
+from custom_habitat.sims.habitat_simulator import _try_register_habitat_sim
+from custom_habitat.sims.pyrobot import _try_register_pyrobot
+from custom_habitat.sims.pickplace import _try_register_pickplace_sim
 
 
 def make_sim(id_sim, **kwargs):

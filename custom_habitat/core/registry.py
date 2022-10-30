@@ -30,10 +30,10 @@ Various decorators for registry different kind of classes with unique keys
 import collections
 from typing import Any, Callable, DefaultDict, Optional, Type
 
-from habitat.core.dataset import Dataset
-from habitat.core.embodied_task import Action, EmbodiedTask, Measure
-from habitat.core.simulator import ActionSpaceConfiguration, Sensor, Simulator
-from habitat.core.utils import Singleton
+from custom_habitat.core.dataset import Dataset
+from custom_habitat.core.embodied_task import Action, EmbodiedTask, Measure
+from custom_habitat.core.simulator import ActionSpaceConfiguration, Sensor, Simulator
+from custom_habitat.core.utils import Singleton
 
 
 class Registry(metaclass=Singleton):

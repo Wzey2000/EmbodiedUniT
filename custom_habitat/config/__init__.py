@@ -51,7 +51,7 @@ config.
 Create a YAML file and add new fields and values. Load the custom config using
 `habitat.get_config()` and defined fields will be merged in default Habitat config:
 ```
-import habitat
+import custom_habitat as habitat
 import argparse
 from typing import List, Optional, Union
 
@@ -120,6 +120,6 @@ def main():
 
 ```"""
 
-from habitat.config.default import Config, get_config
+from custom_habitat.config.default import Config, get_config
 
 __all__ = ["Config", "get_config"]

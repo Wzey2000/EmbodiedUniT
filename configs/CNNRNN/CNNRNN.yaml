@@ -34,6 +34,9 @@ STATE_ENCODER:
   num_recurrent_layers: 2
   rnn_type: 'GRU'
 
+memory:
+  memory_size: 501
+
 BC:
   max_epoch: 25
   USE_IW: True

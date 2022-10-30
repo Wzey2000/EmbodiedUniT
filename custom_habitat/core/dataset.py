@@ -30,8 +30,8 @@ import attr
 import numpy as np
 from numpy import ndarray
 
-from habitat.config import Config
-from habitat.core.utils import not_none_validator
+from custom_habitat.config import Config
+from custom_habitat.core.utils import not_none_validator
 
 ALL_SCENES_MASK = "*"
 

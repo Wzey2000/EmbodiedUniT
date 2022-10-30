@@ -1,5 +1,5 @@
-from habitat.core.registry import registry
-from habitat.core.simulator import Simulator
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import Simulator
 
 
 def _try_register_pickplace_sim():
@@ -12,7 +12,7 @@ def _try_register_pickplace_sim():
         rearrangement_sim_import_error = e
 
     if has_habitat_sim:
-        from habitat.sims.pickplace.actions import (  # noqa: F401
+        from custom_habitat.sims.pickplace.actions import (  # noqa: F401
             PickPlaceSimV0ActionSpaceConfiguration,
         )
     else:

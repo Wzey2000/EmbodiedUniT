@@ -7,7 +7,7 @@ TIME_DEBUG = False
 from utils.ob_utils import batch_obs
 
 # this wrapper comes after vectorenv
-from habitat.core.vector_env import VectorEnv
+from custom_habitat.core.vector_env import VectorEnv
 
 
 class EnvWrapper(Wrapper):

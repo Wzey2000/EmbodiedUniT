@@ -7,7 +7,7 @@
 import numba
 import numpy as np
 
-from habitat.utils.visualizations import maps
+from custom_habitat.utils.visualizations import maps
 
 
 @numba.jit(nopython=True)

@@ -9,22 +9,21 @@ import os
 import random
 from typing import Any, Dict, List, Optional, Sequence
 
-from habitat.config import Config
-from habitat.core.dataset import ObjectInScene, SceneState
-from habitat.core.registry import registry
-from habitat.core.simulator import AgentState, ShortestPathPoint
-from habitat.core.utils import DatasetFloatJSONEncoder
-from habitat.datasets.pointnav.pointnav_dataset import (
+from custom_habitat.config import Config
+from custom_habitat.core.dataset import ObjectInScene, SceneState
+from custom_habitat.core.registry import registry
+from custom_habitat.core.simulator import AgentState, ShortestPathPoint
+from custom_habitat.core.utils import DatasetFloatJSONEncoder
+from custom_habitat.datasets.pointnav.pointnav_dataset import (
     CONTENT_SCENES_PATH_FIELD,
     DEFAULT_SCENE_PATH_PREFIX,
     PointNavDatasetV1,
 )
-from habitat.tasks.nav.object_nav_task import (
+from custom_habitat.tasks.nav.nav import (
     ObjectGoal,
     ObjectGoalNavEpisode,
     ObjectViewLocation,
-)
-from habitat.tasks.nav.object_nav_task import ReplayActionSpec, AgentStateSpec
+    ReplayActionSpec, AgentStateSpec)
 
 
 @registry.register_dataset(name="ObjectNav-v1")

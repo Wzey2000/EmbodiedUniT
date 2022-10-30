@@ -1,12 +1,13 @@
 import pickle
 
 import attr
-import habitat
+import custom_habitat as habitat
 import habitat_sim
 import habitat_sim.utils
 import magnum as mn
 import numpy as np
-from habitat.sims.habitat_simulator.actions import HabitatSimActions,HabitatSimV0ActionSpaceConfiguration
+from custom_habitat.sims.habitat_simulator.actions import HabitatSimActions,HabitatSimV0ActionSpaceConfiguration
+from custom_habitat.core.simulator import ActionSpaceConfiguration
 
 actuation_noise_fwd = pickle.load(open("env_utils/noise_models/actuation_noise_fwd.pkl", 'rb'))
 actuation_noise_right = pickle.load(open("env_utils/noise_models/actuation_noise_right.pkl", 'rb'))
@@ -103,7 +104,7 @@ class NoisyLeft(habitat_sim.SceneNodeControl):
             scene_node,
             actuation_spec.action,
         )
-from habitat.tasks.nav.nav import SimulatorTaskAction
+from custom_habitat.tasks.nav.nav import SimulatorTaskAction
 @habitat.registry.register_task_action
 class NOISYFORWARD(SimulatorTaskAction):
     def _get_uuid(self, *args, **kwargs) -> str:
@@ -144,5 +145,49 @@ class CustomActionSpaceConfiguration(HabitatSimV0ActionSpaceConfiguration):
             "noisy_left",
             CustomActuationSpec(2),
         )
+
+        return config
+
+# Copy-pasted from habitat-lab/habitat/sims/habitat_simulator/actions.py
+@habitat.registry.register_action_space_configuration(name="v0")
+class HabitatSimV0ActionSpaceConfiguration(ActionSpaceConfiguration):
+    def get(self):
+        return {
+            HabitatSimActions.STOP: habitat_sim.ActionSpec("stop"),
+            HabitatSimActions.MOVE_FORWARD: habitat_sim.ActionSpec(
+                "move_forward",
+                habitat_sim.ActuationSpec(
+                    amount=self.config.FORWARD_STEP_SIZE
+                ),
+            ),
+            HabitatSimActions.TURN_LEFT: habitat_sim.ActionSpec(
+                "turn_left",
+                habitat_sim.ActuationSpec(amount=self.config.TURN_ANGLE),
+            ),
+            HabitatSimActions.TURN_RIGHT: habitat_sim.ActionSpec(
+                "turn_right",
+                habitat_sim.ActuationSpec(amount=self.config.TURN_ANGLE),
+            ),
+        }
+
+
+@habitat.registry.register_action_space_configuration(name="v1")
+class HabitatSimV1ActionSpaceConfiguration(
+    HabitatSimV0ActionSpaceConfiguration
+):
+    def get(self):
+        config = super().get()
+        new_config = {
+            HabitatSimActions.LOOK_UP: habitat_sim.ActionSpec(
+                "look_up",
+                habitat_sim.ActuationSpec(amount=self.config.TILT_ANGLE),
+            ),
+            HabitatSimActions.LOOK_DOWN: habitat_sim.ActionSpec(
+                "look_down",
+                habitat_sim.ActuationSpec(amount=self.config.TILT_ANGLE),
+            ),
+        }
+
+        config.update(new_config)
 
         return config

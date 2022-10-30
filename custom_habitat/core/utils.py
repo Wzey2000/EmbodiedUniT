@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import quaternion  # noqa: F401
 
-from habitat.utils.geometry_utils import quaternion_to_list
+from custom_habitat.utils.geometry_utils import quaternion_to_list
 
 # Internals from inner json library needed for patching functionality in
 # DatasetFloatJSONEncoder.

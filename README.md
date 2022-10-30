@@ -112,7 +112,7 @@ The imitation learning pipieline is defined in ```./custom_habitat_baselines/il/
 
 Use this command to train an agent in ImageNav tasks:
 ```
-python run.py --cfg ./configs/CNNRNN/CNNRNN_woPose_envbased.yaml
+python run.py --cfg ./configs/ImageNav/CNNRNN/CNNRNN_woPose_envbased.yaml
 ```
 
 

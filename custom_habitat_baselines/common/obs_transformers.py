@@ -137,6 +137,79 @@ class ResizeShortestEdge(ObservationTransformer):
 
 
 @baseline_registry.register_obs_transformer()
+class Resize(ObservationTransformer):
+    r"""An nn module the resizes your the shortest edge of the input while maintaining aspect ratio.
+    This module assumes that all images in the batch are of the same size.
+    """
+
+    def __init__(
+        self,
+        size: int,
+        channels_last: bool = True,
+        trans_keys: Tuple[str] = ("rgb", "depth", "semantic"),
+    ):
+        """Args:
+        size: The size you want to resize the shortest edge to
+        channels_last: indicates if channels is the last dimension
+        """
+        super(ResizeShortestEdge, self).__init__()
+        self._size: int = size
+        self.channels_last: bool = channels_last
+        self.trans_keys: Tuple[str] = trans_keys
+
+    def transform_observation_space(
+        self,
+        observation_space: spaces.Dict,
+    ):
+        size = self._size
+        observation_space = copy.deepcopy(observation_space)
+        if size:
+            for key in observation_space.spaces:
+                if key in self.trans_keys:
+                    # In the observation space dict, the channels are always last
+                    h, w = get_image_height_width(
+                        observation_space.spaces[key], channels_last=True
+                    )
+                    if size == min(h, w):
+                        continue
+                    scale = size / min(h, w)
+                    new_h = int(h * scale)
+                    new_w = int(w * scale)
+                    new_size = (new_h, new_w)
+                    logger.info(
+                        "Resizing observation of %s: from %s to %s"
+                        % (key, (h, w), new_size)
+                    )
+                    observation_space.spaces[key] = overwrite_gym_box_shape(
+                        observation_space.spaces[key], new_size
+                    )
+        return observation_space
+
+    def _transform_obs(self, obs: torch.Tensor) -> torch.Tensor:
+        return image_resize_shortest_edge(
+            obs, self._size, channels_last=self.channels_last
+        )
+
+    @torch.no_grad()
+    def forward(
+        self, observations: Dict[str, torch.Tensor]
+    ) -> Dict[str, torch.Tensor]:
+        if self._size is not None:
+            observations.update(
+                {
+                    sensor: self._transform_obs(observations[sensor])
+                    for sensor in self.trans_keys
+                    if sensor in observations
+                }
+            )
+        return observations
+
+    @classmethod
+    def from_config(cls, config: Config):
+        return cls(config.RL.POLICY.OBS_TRANSFORMS.RESIZE_SHORTEST_EDGE.SIZE)
+
+
+@baseline_registry.register_obs_transformer()
 class CenterCropper(ObservationTransformer):
     """An observation transformer is a simple nn module that center crops your input."""
 
@@ -1259,6 +1332,7 @@ def get_active_obs_transforms(config: Config) -> List[ObservationTransformer]:
             obs_trans_cls = baseline_registry.get_obs_transformer(
                 obs_transform_name
             )
+            print(obs_transform_name, obs_trans_cls)
             obs_transform = obs_trans_cls.from_config(config)
             active_obs_transforms.append(obs_transform)
     

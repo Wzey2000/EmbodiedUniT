@@ -20,15 +20,19 @@ class RolloutStorage:
         action_space,
         recurrent_hidden_state_size,
         num_recurrent_layers=1,
+        obs_to_save = None
     ):
         self.observations = {}
 
+        self.obs_to_save = obs_to_save
+
         for sensor in observation_space.spaces:
-            self.observations[sensor] = torch.zeros(
-                num_steps + 1,
-                num_envs,
-                *observation_space.spaces[sensor].shape
-            )
+            if sensor in  obs_to_save:
+                self.observations[sensor] = torch.zeros(
+                    num_steps + 1,
+                    num_envs,
+                    *observation_space.spaces[sensor].shape
+                )
 
         self.recurrent_hidden_states = torch.zeros(
             1,
@@ -77,9 +81,10 @@ class RolloutStorage:
         masks,
     ):
         for sensor in observations:
-            self.observations[sensor][self.step + 1].copy_(
-                observations[sensor]
-            )
+            if sensor in self.obs_to_save:
+                self.observations[sensor][self.step + 1].copy_(
+                    observations[sensor]
+                )
         self.actions[self.step].copy_(actions)
         self.prev_actions[self.step + 1].copy_(actions)
         self.rewards[self.step].copy_(rewards)

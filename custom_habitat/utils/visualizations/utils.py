@@ -13,11 +13,17 @@ import colorsys
 import imageio
 import numpy as np
 import tqdm
-
+import scipy
 from custom_habitat.core.logging import logger
 from custom_habitat.core.utils import try_cv2_import
 from custom_habitat.utils.visualizations import maps
 from habitat_sim.utils import viz_utils as vut
+
+agent_colors = ['red','blue', 'yellow', 'green']
+AGENT_IMGS = []
+for color in agent_colors:
+    img = np.ascontiguousarray(np.flipud(imageio.imread('env_utils/agent_pictures/agent_{}.png'.format(color))))
+    AGENT_IMGS.append(img)
 
 cv2 = try_cv2_import()
 
@@ -143,6 +149,45 @@ def images_to_video(
     writer.close()
 
 
+def draw_agent(
+    image: np.ndarray,
+    agent_id,
+    agent_center_coord: Tuple[int, int],
+    agent_rotation: float,
+    agent_radius_px: int = 5,
+) -> np.ndarray:
+    r"""Return an image with the agent image composited onto it.
+    Args:
+        image: the image onto which to put the agent.
+        agent_center_coord: the image coordinates where to paste the agent.
+        agent_rotation: the agent's current rotation in radians.
+        agent_radius_px: 1/2 number of pixels the agent will be resized to.
+    Returns:
+        The modified background image. This operation is in place.
+    """
+
+    # Rotate before resize to keep good resolution.
+    rotated_agent = scipy.ndimage.interpolation.rotate(
+        AGENT_IMGS[agent_id], agent_rotation * 180 / np.pi
+    )
+    # Rescale because rotation may result in larger image than original, but
+    # the agent sprite size should stay the same.
+    initial_agent_size = AGENT_IMGS[agent_id].shape[0]
+    new_size = rotated_agent.shape[0]
+    agent_size_px = max(
+        1, int(agent_radius_px * 2 * new_size / initial_agent_size)
+    )
+    resized_agent = cv2.resize(
+        rotated_agent,
+        (agent_size_px, agent_size_px),
+        interpolation=cv2.INTER_LINEAR,
+    )
+
+    #print("resized_agent", image.shape, resized_agent.shape, agent_center_coord);input()
+    paste_overlapping_image(image, resized_agent, agent_center_coord)
+    return image
+
+
 def draw_collision(view: np.ndarray, alpha: float = 0.4) -> np.ndarray:
     r"""Draw translucent red strips on the border of input view to indicate
     a collision has taken place.
@@ -237,6 +282,27 @@ def observations_to_image(observation: Dict, info: Dict, top_down_map_only=False
             )
             frame = top_down_map
     return frame
+
+
+def clip_map_birdseye_view(image, clip_size, pixel_pose):
+    half_clip_size = clip_size//2
+
+    delta_x = pixel_pose[0] - half_clip_size
+    delta_y = pixel_pose[1] - half_clip_size
+    min_x = max(delta_x, 0)
+    max_x = min(pixel_pose[0] + half_clip_size, image.shape[0])
+    min_y = max(delta_y, 0)
+    max_y = min(pixel_pose[1] + half_clip_size, image.shape[1])
+
+    return_image = np.zeros([clip_size, clip_size, 3],dtype=np.uint8)
+    cliped_image = image[min_x:max_x, min_y:max_y]
+    start_x = max(-delta_x,0)
+    start_y = max(-delta_y,0)
+    try:
+        return_image[start_x:start_x+cliped_image.shape[0],start_y:start_y+cliped_image.shape[1]] = cliped_image
+    except:
+        print('image shape ', image.shape, 'min_x', min_x,'max_x', max_x,'min_y',min_y,'max_y',max_y, 'return_image.shape',return_image.shape, 'cliped', cliped_image.shape, 'start_x,y', start_x, start_y)
+    return return_image
 
 
 def append_text_to_image(image: np.ndarray, text: str):

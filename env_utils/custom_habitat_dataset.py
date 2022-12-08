@@ -27,7 +27,7 @@ from custom_habitat.tasks.nav.nav import ImageGoal, NavigationGoal, NavigationEp
 
 
 
-@registry.register_dataset(name="VisTargetNav-v1")
+#@registry.register_dataset(name="VisTargetNav-v1")
 class VisTargetNavDatasetV1(PointNavDatasetV1):
     def __init__(self, config: Optional[Config] = None, filter_fn= None) -> None:
         self.filter_fn = filter_fn
@@ -63,7 +63,7 @@ class VisTargetNavDatasetV1(PointNavDatasetV1):
             self.episodes.append(episode)
 
 
-@registry.register_dataset(name="ImageNav-v1")
+#@registry.register_dataset(name="ImageNav-v1")
 class ImageNavDatasetV1(PointNavDatasetV1):
     r"""Class inherited from PointNavDataset that loads Object Navigation dataset."""
     episodes: List[NavigationEpisode] = []  # type: ignore

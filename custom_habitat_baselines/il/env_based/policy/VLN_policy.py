@@ -24,8 +24,9 @@ from custom_habitat_baselines.rl.models.rnn_state_encoder import RNNStateEncoder
 from custom_habitat_baselines.common.baseline_registry import baseline_registry
 from custom_habitat_baselines.rl.ppo import Net, Policy
 
+from .instruction_encoder import InstructionEncoder
 
-class ObjectNavILNet(Net):
+class VLNILNet(Net):
     r"""A baseline sequence to sequence network that concatenates instruction,
     RGB, and depth encodings before decoding an action distribution with an RNN.
     Modules:
@@ -35,12 +36,25 @@ class ObjectNavILNet(Net):
         RNN state encoder
     """
 
-    def __init__(self, observation_space: Space, model_config: Config, num_actions, device=None):
+    def __init__(self, observation_space: Space, config: Config, num_actions, device=None):
         super().__init__()
+
+        model_config = config.MODEL
         self.model_config = model_config
         rnn_input_size = 0
 
-        # Init the depth encoder
+        """
+        Instruction
+        """
+        if 'INSTRUCTION_SENSOR' in config.TASK_CONFIG.TASK.SENSORS:
+            self.instruction_encoder = InstructionEncoder(config)
+            logger.info("\n\nSetting up Instruction sensor")
+            rnn_input_size += model_config.INSTRUCTION_ENCODER.hidden_size
+        else:
+            self.instruction_encoder = None
+        """
+        Depth
+        """
         assert model_config.DEPTH_ENCODER.cnn_type in [
             "VlnResnetDepthEncoder",
             "None",
@@ -53,11 +67,14 @@ class ObjectNavILNet(Net):
                 backbone=model_config.DEPTH_ENCODER.backbone,
                 trainable=model_config.DEPTH_ENCODER.trainable,
             )
+            logger.info("\n\nSetting up Depth sensor")
             rnn_input_size += model_config.DEPTH_ENCODER.output_size
         else:
             self.depth_encoder = None
 
-        # Init the RGB visual encoder
+        """
+        RGB
+        """
         assert model_config.RGB_ENCODER.cnn_type in [
             "ResnetRGBEncoder",
             "None",
@@ -68,14 +85,18 @@ class ObjectNavILNet(Net):
                 observation_space,
                 output_size=model_config.RGB_ENCODER.output_size,
                 backbone=model_config.RGB_ENCODER.backbone,
-                trainable=model_config.RGB_ENCODER.train_encoder,
+                trainable=model_config.RGB_ENCODER.trainable,
                 normalize_visual_inputs=model_config.normalize_visual_inputs,
             )
+            logger.info("\n\nSetting up RGB sensor")
             rnn_input_size += model_config.RGB_ENCODER.output_size
         else:
             self.rgb_encoder = None
             logger.info("RGB encoder is none")
 
+        """
+        Semantic
+        """
         sem_seg_output_size = 0
         self.semantic_predictor = None
         self.is_thda = False
@@ -121,6 +142,9 @@ class ObjectNavILNet(Net):
                 self.mapping_mpcat40_to_goal = torch.tensor(self.mapping_mpcat40_to_goal, device=device)
                 rnn_input_size += 1
 
+        """
+        GPS+Compass
+        """
         if EpisodicGPSSensor.cls_uuid in observation_space.spaces:
             input_gps_dim = observation_space.spaces[
                 EpisodicGPSSensor.cls_uuid
@@ -142,6 +166,9 @@ class ObjectNavILNet(Net):
             rnn_input_size += 32
             logger.info("\n\nSetting up Compass sensor")
 
+        """
+        Object Goal
+        """
         if ObjectGoalSensor.cls_uuid in observation_space.spaces:
             self._n_object_categories = (
                 int(
@@ -158,8 +185,12 @@ class ObjectNavILNet(Net):
             rnn_input_size += 32
             logger.info("\n\nSetting up Object Goal sensor")
 
+        """
+        Prev. action
+        """
         if model_config.SEQ2SEQ.use_prev_action:
             self.prev_action_embedding = nn.Embedding(num_actions + 1, 32)
+            logger.info("\n\nSetting up prev act embedding")
             rnn_input_size += self.prev_action_embedding.embedding_dim
 
         self.rnn_input_size = rnn_input_size
@@ -215,7 +246,7 @@ class ObjectNavILNet(Net):
         depth_embedding: [batch_size x DEPTH_ENCODER.output_size]
         rgb_embedding: [batch_size x RGB_ENCODER.output_size]
         """
-        rgb_obs = observations["rgb"]
+        rgb_obs = observations["rgb"] #  num_steps x num_procs x H x W x 3
         depth_obs = observations["depth"]
 
         x = []
@@ -237,6 +268,10 @@ class ObjectNavILNet(Net):
 
             rgb_embedding = self.rgb_encoder(observations)
             x.append(rgb_embedding)
+
+        if self.instruction_encoder is not None:
+            instruction_embedding = self.instruction_encoder(observations)
+            x.append(instruction_embedding)
 
         if self.model_config.USE_SEMANTICS:
             semantic_obs = observations["semantic"]
@@ -288,19 +323,19 @@ class ObjectNavILNet(Net):
 
         return x, rnn_hidden_states
 
-
-class ObjectNavILPolicy(Policy):
+@baseline_registry.register_policy
+class VLNPolicy(Policy):
     def __init__(
-        self, observation_space: Space, action_space: Space, model_config: Config
+        self, config, observation_space, action_space, no_critic=True
     ):
         super().__init__(
-            ObjectNavILNet(
+            VLNILNet(
                 observation_space=observation_space,
-                model_config=model_config,
+                config=config,
                 num_actions=action_space.n,
             ),
             action_space.n,
-            no_critic=True
+            no_critic=no_critic
         )
 
     @classmethod
@@ -308,7 +343,7 @@ class ObjectNavILPolicy(Policy):
         cls, config: Config, observation_space, action_space
     ):
         return cls(
+            config,
             observation_space=observation_space,
             action_space=action_space,
-            model_config=config.MODEL,            
         )

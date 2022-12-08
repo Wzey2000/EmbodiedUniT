@@ -137,6 +137,7 @@ _C.TASK.PROXIMITY_SENSOR.MAX_DETECTION_RADIUS = 2.0
 _C.TASK.SUCCESS = CN()
 _C.TASK.SUCCESS.TYPE = "Success"
 _C.TASK.SUCCESS.SUCCESS_DISTANCE = 0.2
+_C.TASK.SUCCESS.THDA_SUCCESS_DISTANCE = 1.0
 # -----------------------------------------------------------------------------
 # SPL MEASUREMENT
 # -----------------------------------------------------------------------------
@@ -222,6 +223,48 @@ _C.TASK.EPISODE_INFO.TYPE = "EpisodeInfo"
 _C.TASK.INSTRUCTION_SENSOR = CN()
 _C.TASK.INSTRUCTION_SENSOR.TYPE = "InstructionSensor"
 _C.TASK.INSTRUCTION_SENSOR_UUID = "instruction"
+# ----------------------------------------------------------------------------
+# NDTW MEASUREMENT
+# ----------------------------------------------------------------------------
+_C.TASK.NDTW = CN()
+_C.TASK.NDTW.TYPE = "NDTW"
+_C.TASK.NDTW.SPLIT = "val_seen"
+_C.TASK.NDTW.FDTW = True  # False: DTW
+_C.TASK.NDTW.GT_PATH = (
+    "/data/jing_li/habitat-lab/data/datasets/VLN/VLNCE_R2R/{split}/{split}_gt.json.gz"
+)
+_C.TASK.NDTW.SUCCESS_DISTANCE = 3.0
+# ----------------------------------------------------------------------------
+# SDTW MEASUREMENT
+# ----------------------------------------------------------------------------
+_C.TASK.SDTW = CN()
+_C.TASK.SDTW.TYPE = "SDTW"
+# ----------------------------------------------------------------------------
+# PATH_LENGTH MEASUREMENT
+# ----------------------------------------------------------------------------
+_C.TASK.PATH_LENGTH = CN()
+_C.TASK.PATH_LENGTH.TYPE = "PathLength"
+# ----------------------------------------------------------------------------
+# ORACLE_NAVIGATION_ERROR MEASUREMENT
+# ----------------------------------------------------------------------------
+_C.TASK.ORACLE_NAVIGATION_ERROR = CN()
+_C.TASK.ORACLE_NAVIGATION_ERROR.TYPE = "OracleNavigationError"
+# ----------------------------------------------------------------------------
+# ORACLE_SUCCESS MEASUREMENT
+# ----------------------------------------------------------------------------
+_C.TASK.ORACLE_SUCCESS = CN()
+_C.TASK.ORACLE_SUCCESS.TYPE = "OracleSuccess"
+_C.TASK.ORACLE_SUCCESS.SUCCESS_DISTANCE = 3.0
+# ----------------------------------------------------------------------------
+# ORACLE_SPL MEASUREMENT
+# ----------------------------------------------------------------------------
+_C.TASK.ORACLE_SPL = CN()
+_C.TASK.ORACLE_SPL.TYPE = "OracleSPL"
+# ----------------------------------------------------------------------------
+# STEPS_TAKEN MEASUREMENT
+# ----------------------------------------------------------------------------
+_C.TASK.STEPS_TAKEN = CN()
+_C.TASK.STEPS_TAKEN.TYPE = "StepsTaken"
 # -----------------------------------------------------------------------------
 # # DISTANCE_TO_GOAL MEASUREMENT
 # -----------------------------------------------------------------------------

@@ -54,7 +54,9 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
         agent_config = self._get_agent_config()
 
         sim_sensors = []
+        #print(10*'=',self.habitat_config,'\n'+10*'=')
         for sensor_name in agent_config.SENSORS:
+            #print(sensor_name)
             sensor_cfg = getattr(self.habitat_config, sensor_name)
 
             sensor_type = registry.get_sensor(sensor_cfg.TYPE)
@@ -106,71 +108,70 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
             )
 
             sensor_specifications = []
-            try:
-                import inspect
-                for sensor in self.sensor_suite.sensors.values():
-                    sim_sensor_cfg = habitat_sim.CameraSensorSpec()
-                    overwrite_config(
-                        config_from=sensor.config, config_to=sim_sensor_cfg,
-                    #     ignore_keys={
-                    #     "height",
-                    #     #"hfov",
-                    #     "max_depth",
-                    #     "min_depth",
-                    #     "normalize_depth",
-                    #     "type",
-                    #     "width",
-                    #     "angle"
-                    # }
-                    )
-                    sim_sensor_cfg.uuid = sensor.uuid
-                    sim_sensor_cfg.resolution = list(
-                        sensor.observation_space.shape[:2]
-                    )
-                    #sim_sensor_cfg.parameters["hfov"] = str(sensor.config.HFOV)
+            # try:
+            for sensor in self.sensor_suite.sensors.values():
+                sim_sensor_cfg = habitat_sim.CameraSensorSpec()
+                overwrite_config(
+                    config_from=sensor.config, config_to=sim_sensor_cfg,
+                #     ignore_keys={
+                #     "height",
+                #     #"hfov",
+                #     "max_depth",
+                #     "min_depth",
+                #     "normalize_depth",
+                #     "type",
+                #     "width",
+                #     "angle"
+                # }
+                )
+                sim_sensor_cfg.uuid = sensor.uuid
+                sim_sensor_cfg.resolution = list(
+                    sensor.observation_space.shape[:2]
+                )
+                #sim_sensor_cfg.parameters["hfov"] = str(sensor.config.HFOV)
 
-                    # TODO(maksymets): Add configure method to Sensor API to avoid
-                    # accessing child attributes through parent interface
-                    # We know that the Sensor has to be one of these Sensors
-                    #sensor = cast(HabitatSimVizSensors, sensor)
-                    sim_sensor_cfg.sensor_type = sensor.sim_sensor_type
-                    sim_sensor_cfg.sensor_subtype = sensor.sim_sensor_subtype
-                    sim_sensor_cfg.gpu2gpu_transfer = (
-                        self.habitat_config.HABITAT_SIM_V0.GPU_GPU
-                    )
-                    sensor_specifications.append(sim_sensor_cfg)
-            except:
-                for sensor in self.sensor_suite.sensors.values():
-                    sim_sensor_cfg = habitat_sim.SensorSpec()
-                    overwrite_config(
-                        config_from=sensor.config, config_to=sim_sensor_cfg,
-                        # ignore_keys={
-                        #     "height",
-                        #     "hfov",
-                        #     "max_depth",
-                        #     "min_depth",
-                        #     "normalize_depth",
-                        #     "type",
-                        #     "width",
-                        #     "angle"
-                        # }
-                    )
-                    sim_sensor_cfg.uuid = sensor.uuid
-                    sim_sensor_cfg.resolution = list(
-                        sensor.observation_space.shape[:2]
-                    )
-                    sim_sensor_cfg.parameters["hfov"] = str(sensor.config.HFOV)
+                # TODO(maksymets): Add configure method to Sensor API to avoid
+                # accessing child attributes through parent interface
+                # We know that the Sensor has to be one of these Sensors
+                #sensor = cast(HabitatSimVizSensors, sensor)
+                sim_sensor_cfg.sensor_type = sensor.sim_sensor_type
+                sim_sensor_cfg.sensor_subtype = sensor.sim_sensor_subtype
+                sim_sensor_cfg.gpu2gpu_transfer = (
+                    self.habitat_config.HABITAT_SIM_V0.GPU_GPU
+                )
+                sensor_specifications.append(sim_sensor_cfg)
+            # except:
+            #     for sensor in self.sensor_suite.sensors.values():
+            #         sim_sensor_cfg = habitat_sim.SensorSpec()
+            #         overwrite_config(
+            #             config_from=sensor.config, config_to=sim_sensor_cfg,
+            #             # ignore_keys={
+            #             #     "height",
+            #             #     "hfov",
+            #             #     "max_depth",
+            #             #     "min_depth",
+            #             #     "normalize_depth",
+            #             #     "type",
+            #             #     "width",
+            #             #     "angle"
+            #             # }
+            #         )
+            #         sim_sensor_cfg.uuid = sensor.uuid
+            #         sim_sensor_cfg.resolution = list(
+            #             sensor.observation_space.shape[:2]
+            #         )
+            #         sim_sensor_cfg.parameters["hfov"] = str(sensor.config.HFOV)
 
-                    # TODO(maksymets): Add configure method to Sensor API to avoid
-                    # accessing child attributes through parent interface
-                    # We know that the Sensor has to be one of these Sensors
-                    #sensor = cast(HabitatSimVizSensors, sensor)
-                    sim_sensor_cfg.sensor_type = sensor.sim_sensor_type
-                    sim_sensor_cfg.sensor_subtype = sensor.sim_sensor_subtype
-                    sim_sensor_cfg.gpu2gpu_transfer = (
-                        self.habitat_config.HABITAT_SIM_V0.GPU_GPU
-                    )
-                    sensor_specifications.append(sim_sensor_cfg)
+            #         # TODO(maksymets): Add configure method to Sensor API to avoid
+            #         # accessing child attributes through parent interface
+            #         # We know that the Sensor has to be one of these Sensors
+            #         #sensor = cast(HabitatSimVizSensors, sensor)
+            #         sim_sensor_cfg.sensor_type = sensor.sim_sensor_type
+            #         sim_sensor_cfg.sensor_subtype = sensor.sim_sensor_subtype
+            #         sim_sensor_cfg.gpu2gpu_transfer = (
+            #             self.habitat_config.HABITAT_SIM_V0.GPU_GPU
+            #         )
+            #         sensor_specifications.append(sim_sensor_cfg)
 
             agent_config.sensor_specifications = sensor_specifications
             agent_config.action_space = registry.get_action_space_configuration(

@@ -15,7 +15,7 @@ from custom_habitat.core.logging import logger
 from custom_habitat.core.registry import registry  # noqa : F401
 from custom_habitat.core.simulator import Sensor, SensorSuite, SensorTypes, Simulator
 from custom_habitat.core.vector_env import ThreadedVectorEnv, VectorEnv
-from custom_habitat.datasets import make_dataset
+from custom_habitat.datasets import * #make_dataset
 from custom_habitat.version import VERSION as __version__  # noqa
 
 __all__ = [

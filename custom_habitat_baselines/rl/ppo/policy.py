@@ -59,11 +59,11 @@ class Policy(nn.Module, metaclass=abc.ABCMeta):
             action = distribution.mode()
         else:
             action = distribution.sample()
-        action_log_probs = distribution.log_probs(action)
-
+        
         if self.no_critic:
-            return action, rnn_hidden_states            
+            return action, distribution.logits, rnn_hidden_states            
 
+        action_log_probs = distribution.log_probs(action)
         value = self.critic(features)
         return value, action, action_log_probs, rnn_hidden_states
 

@@ -20,12 +20,12 @@ from custom_habitat.core.registry import registry
 from custom_habitat.core.simulator import Observations, Sensor, Simulator, SensorTypes
 from custom_habitat.core.utils import not_none_validator
 from custom_habitat.tasks.nav.nav import (
-    merge_sim_episode_config,
     DistanceToGoal,
     TopDownMap,
     EpisodicGPSSensor,
     PointGoalSensor
 )
+from custom_habitat.tasks.utils import merge_sim_episode_config
 from custom_habitat.core.dataset import Dataset, Episode
 from custom_habitat.core.embodied_task import SimulatorTaskAction, Measure
 from custom_habitat.sims.habitat_simulator.actions import (
@@ -213,7 +213,7 @@ class InstructionSensor(Sensor):
         return self._get_observation(**kwargs)
 
 
-@registry.register_sensor(name="DemonstrationSensor")
+@registry.register_sensor(name="DemonstrationSensor_original")
 class DemonstrationSensor(Sensor):
     def __init__(self, **kwargs):
         self.uuid = "demonstration"
@@ -248,7 +248,7 @@ class DemonstrationSensor(Sensor):
         return self._get_observation(**kwargs)
 
 
-@registry.register_sensor(name="InflectionWeightSensor")
+@registry.register_sensor(name="InflectionWeightSensor_original")
 class InflectionWeightSensor(Sensor):
     def __init__(self, config: Config, **kwargs):
         self.uuid = "inflection_weight"

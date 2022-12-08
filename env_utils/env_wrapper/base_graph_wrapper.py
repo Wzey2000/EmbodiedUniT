@@ -1,19 +1,13 @@
 from gym.wrappers.monitor import Wrapper
 from gym.spaces.box import Box
 import torch
-from torchvision import transforms
 import numpy as np
-from copy import deepcopy
-from utils.ob_utils import log_time
-from utils.ob_utils import batch_obs
-import torch.nn as nn
-import torch.nn.functional as F
-from model.PCL.resnet_pcl import resnet18
+from custom_habitat.utils.ob_utils import batch_obs
+
 import os
 # this wrapper comes after vectorenv
 from custom_habitat.core.vector_env import VectorEnv
 from env_utils.env_wrapper.graph import Graph
-from utils.encoder_loaders import load_PCL_encoder, load_CRL_encoder
 
 
 # To learn the functionalities of Wrapper class, see https://hub.packtpub.com/openai-gym-environments-wrappers-and-monitors-tutorial/

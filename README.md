@@ -8,7 +8,7 @@
 The source code is developed and tested in the following setting. 
 - Python 3.7
 - pytorch 1.7.1
-- habitat-sim 0.2.0
+- habitat-sim 0.2.1
 - habitat 0.2.1
 
 Please refer to [habitat-sim](https://github.com/facebookresearch/habitat-sim.git) and [habitat-lab](https://github.com/facebookresearch/habitat-lab.git) for installation instructions.
@@ -21,24 +21,30 @@ pip install -r requirements.txt
 
 ## Data Setup
 ### Scene Datasets
-The scene datasets and task datasets used for training should be organized in the habitat-lab directory as follows:
+The scene datasets and task datasets used for training should be organized as follows:
 ```
-habitat-api (or habitat-lab)
+Any path
   └── data
       └── scene_datasets
           └── gibson_habitat
-              └── *.glb, *.navmeshs  
+          |   └── *.glb, *.navmeshs
+          └── mp3d
+              └── 1LXtFkjw3qL
+              |    └── 1LXtFkjw3qL.glb
+              |    └── 1LXtFkjw3qL.navmesh
+              └── ... (other scenes)           
 ```
 
 Then modify the task configuration file as follows so that the Habitat simulator can load these datasets:
+
 ```
-In vistargetnav_mp3d.yaml:
-SCENES_DIR: "Your_habitat_lab_dir/data/scene_datasets"
+For example, in objectnav_mp3d_il.yaml:
+SCENES_DIR: "path/to/data/scene_datasets"
 ```
 
 ## Training and Evaluation Dataset Setup
 ```
-habitat-api (or habitat-lab)
+Any path
   └── data
       └── datasets
       │   └── pointnav
@@ -47,12 +53,33 @@ habitat-api (or habitat-lab)
       │   |           └── train
       │   |           └── val
       |   └── objectnav
-      |   │       └── objectnav_mp3d_70k
-      |   │           └── sample
-      |   │           └── train
-      |   │           └── val
+      |   │       └── mp3d
+      |   │           └── mp3d_70k
+      |   │                └── train
+      |   │                |   └── train.json.gz
+      |   │                |   └── content 
+      |   │                |        └── 1LXtFkjw3qL.json.gz 
+      |   │                └── val
+      |   │                └── sample
+      |   └── imagenav
+      │   |   └── gibson
+      │   |       └── v1
+      │   |           └── train
+      │   |           └── val
+      |   └── VLN
+      |   │   └── VLNCE_R2R
+      |   │       └── sample
+      |   │       └── train
+      |   │       └── val
       |   └── imagenav
       └── scene_datasets
+```
+
+Then modify the task configuration file as follows so that the Habitat simulator can load these datasets:
+
+```
+For example, in objectnav_mp3d_il.yaml:
+DATA_PATH: "path/to/data/datasets/objectnav/mp3d/mp3d_70k/{split}/{split}.json.gz"
 ```
 
 ### ImageNav
@@ -66,55 +93,52 @@ DATA_PATH: "Your_habitat_lab_dir/data/datasets/objectnav/objectnav_mp3d_70k/{spl
 ```
 
 ### ObjectNav
+
 We use [the Habitat-web 70k demonstrations](https://habitat-on-web.s3.amazonaws.com/release/datasets/objectnav/objectnav_mp3d_70k.zip) for training and [this official dataset](https://dl.fbaipublicfiles.com/habitat/data/datasets/objectnav/m3d/v1/objectnav_mp3d_v1.zip) for evaluation.
 
-<!-- ## Multi-goal Testing Data Setup
-### ImageNav
-The single and multi-goal train/val datasets for ImageNav should be organized as follows:
-```
-This repo
-  └── image-goal-nav-dataset
-      |
-      └── train
-      └── test
-      |  └── 1goal
-      |  └── 2goal
-      |  └── 3goal
-      └── val
-        └── 1goal
-        │   └── *.json.gz
-        └── 2goal
-        │   └── *.json.gz
-        └── 3goal
-        │   └── *.json.gz
-        └── 4goal
-            └── *.json.gz
-      
-``` -->
-
-<!-- ### ObjectNav
-We use [the Multi-ON](https://github.com/saimwani/multiON) for ObjectNav. -->
 
 ## Training
-### Model Definition
-The policy used in this project is the CNNRNN used in the Habitat-web paper and adapted for ImageNav tasks.
 
-Every navigation policy needs to be defined in ```./model/policy``` and must contains a class method named ```def act(self, *args)```. This policy class also needs to be imported in ```./custom_habitat_baselines/il/env_based/il_trainer.py```.
+### Model Definition
+
+(1) Baseline Model Architecture
+
+The policy used in this project is the CNNRNN used in the Habitat-web paper and adapted for ImageNav and VLN.
+
+You can find the pretrained RedNet semantic segmentation model weights [here](https://habitat-on-web.s3.amazonaws.com/release/checkpoints/rednet/rednet_semmap_mp3d_tuned.pth) and the pretrained depth encoder weights [here](https://habitat-on-web.s3.amazonaws.com/release/checkpoints/depth_encoder/gibson-2plus-resnet50.pth).
+
+Please modify ```SEMANTIC_ENCODER.rednet_ckpt``` and ```DEPTH_ENCODER.ddppo_checkpoint``` in the config accordingly.
+
+(2) Define your own model
+
+Every navigation policy needs to be defined in ```custom_habitat_baselines/il/env_based/policy``` and must contains a class method named ```def act(self, *args)```. 
+
 To specify the policy class you wiil use, please modify the entry called ```POLICY: ***``` in your model configuration file in the ```configs``` directory.
 
 
+
+
 ### Simulator Settings
-The navigation environment is defined in ```./env_utils/task_search_env.py```.
-The agent's sensors, actions, tasks, and goals are defined in ```./custom_habitat/tasks/nav/nav.py```.
+
+The navigation environment is defined in ```custom_habitat_baselines/common/environments.py```.
+
+The agent's sensors, measures, actions, tasks, and goals are defined in ```./custom_habitat/tasks/nav/nav.py```.
 
 ### Training Pipeline
+
 The imitation learning pipieline is defined in ```./custom_habitat_baselines/il/env_based/il_trainer.py```
 
-Use this command to train an agent in ImageNav tasks:
+Use this command to train an agent for ImageNav:
+
 ```
-python run.py --cfg ./configs/ImageNav/CNNRNN/CNNRNN_woPose_envbased.yaml
+python run.py --cfg ./configs/ImageNav/CNNRNN/CNNRNN_woPose_envbased.yaml --split train [--debug 1]
 ```
 
+Use this command to train an agent for ObjectNav:
+
+```
+python run.py --cfg ./configs/ObjectNav/CNNRNN/Objnav_wopano.yaml --split train
+```
 
 <!-- ```train on multiple GPUs
 python -m torch.distributed.launch --nnodes=1 --nproc_per_node=[GPU_num] train_bc.py --config ./configs/CNNRNN/CNNRNN.yaml --stop
@@ -122,14 +146,14 @@ python -m torch.distributed.launch --nnodes=1 --nproc_per_node=[GPU_num] train_b
 
 ## Evaluation
 
-TODO
+Use this command to evalluate an agent for ObjectNav:
+
+```
+python run.py --cfg ./configs/ObjectNav/CNNRNN/Objnav_wopano.yaml --run-type eval --split val --ckpt path/to/ckpt
 
 
 ## Pre-trained Models
-TODO
-<!-- You can download pretrained models here:
 
-- [Memonav model](https://zjueducn-my.sharepoint.com/:u:/g/personal/hongxin_li_zju_edu_cn/EVHGjFj4db9GiblAcCrTh1kBF78FpMW2-X7HUHrGsmXOZg?e=DSPnb5) trained on Gibson scene datasets.  -->
 
 
 ## Results

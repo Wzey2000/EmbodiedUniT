@@ -1,0 +1,94 @@
+# Note:  This is an example config, see habitat_baselines/config/pointnav/ppo_pointnav.yaml
+# for better hyperparameters for actual training
+VERSION: Objnav_wopano
+BASE_TASK_CONFIG_PATH: "objectnav_mp3d_il.yaml"
+IL_TRAINER_NAME: "ILEnvTrainer"
+ENV_NAME: NavRLEnv
+SIMULATOR_GPU_ID: [1,2,3]
+TORCH_GPU_ID: [0]
+VIDEO_OPTION: [] #["disk"] [""tensorboard""]
+# To evaluate on all episodes, set this to -1
+TEST_EPISODE_COUNT: 10
+SHOW_TOP_DOWN_MAP: False
+NUM_PROCESSES: 4
+# OUTPUT_LOG_DIR: data/objectnav/logs
+LOG_INTERVAL: 10
+LOG_METRICS: True
+CHECKPOINT_INTERVAL: 50
+# SENSORS: ['RGB_SENSOR', 'SEMANTIC_SENSOR', 'DEPTH_SENSOR']
+#EVAL_RESUTLS_DIR: "data/objectnav/results/"
+# EVAL_SAVE_RESULTS: True
+# EVAL_SAVE_RESULTS_INTERVAL: 50
+# NUM_UPDATES: 1000
+SPLIT: "train"
+EVAL:
+  SPLIT: "val"
+
+OBS_TO_SAVE: ['rgb', 'depth', 'semantic', 'image_goal', 'objectgoal', 'compass', 'gps', 'step', 'demonstration', 'inflection_weight', 'instruction']
+POLICY: "VLNPolicy"
+
+BC:
+  USE_IW: True
+  # distrib_backend: GLOO
+  lr: 0.001
+  eps: 1.0e-5
+  num_mini_batch: 1
+  hidden_size: 512
+  max_grad_norm: 0.2
+  #sync_frac: 0.6
+
+RL:
+  PPO:
+    clip_param: 0.2
+    use_linear_clip_decay: False
+    use_linear_lr_decay: True
+    max_grad_norm: 0.2
+    num_steps: 16
+    num_mini_batch: 1
+  POLICY:
+    OBS_TRANSFORMS:
+      ENABLED_TRANSFORMS: [ResizeShortestEdge]
+      RESIZE_SHORTEST_EDGE:
+        SIZE: 240
+
+MODEL:
+  num_recurrent_layers: 2
+  rnn_type: "GRU"
+  backbone: "resnet18"
+  resnet_baseplanes: 32
+  normalize_visual_inputs: False
+  force_blind_policy: False
+  embed_sge: True
+  embed_goal_seg: False
+  sem_seg_pred: True
+  USE_SEMANTICS: False # Using semantic_predictor will cause GPU out-of-memory
+  USE_PRED_SEMANTICS: True
+  SWITCH_TO_PRED_SEMANTICS_UPDATE: 0
+  SEMANTIC_ENCODER:
+    rednet_ckpt: "pretrained_models/rednet_semmap_mp3d_tuned.pth"
+    cnn_type: "ResnetSemSegEncoder"
+    output_size: 256
+    backbone: "resnet18"
+    train_encoder: True
+    embedding_size: 4
+    is_thda: True
+    num_classes: 29
+  RGB_ENCODER:
+    cnn_type: "ResnetRGBEncoder"
+    output_size: 256
+    backbone: "resnet18"
+    trainable: True
+  DEPTH_ENCODER:
+    cnn_type: "VlnResnetDepthEncoder"
+    output_size: 128
+    backbone: "resnet50"
+    trainable: False
+    ddppo_checkpoint: "pretrained_models/gibson-2plus-resnet50.pth"
+  STATE_ENCODER:
+    hidden_size: 2048
+    rnn_type: "GRU"
+    num_recurrent_layers: 2
+  SEQ2SEQ:
+    use_prev_action: True
+  PROGRESS_MONITOR:
+    use: False

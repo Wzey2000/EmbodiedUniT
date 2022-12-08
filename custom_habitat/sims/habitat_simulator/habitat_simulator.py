@@ -43,6 +43,7 @@ from custom_habitat.core.simulator import (
     Simulator,
     VisualObservation,
 )
+# from custom_habitat.tasks.nav.nav import HabitatSimVizSensors
 from custom_habitat.core.spaces import Space
 from habitat_sim.nav import NavMeshSettings
 from habitat_sim.utils.common import quat_from_coeffs, quat_to_magnum
@@ -302,12 +303,12 @@ class HabitatSim(habitat_sim.Simulator, Simulator):
             sim_sensor_cfg.resolution = list(
                 sensor.observation_space.shape[:2]
             )
-            sim_sensor_cfg.parameters["hfov"] = str(sensor.config.HFOV)
+            # sim_sensor_cfg.parameters["hfov"] = str(sensor.config.HFOV)
 
             # TODO(maksymets): Add configure method to Sensor API to avoid
             # accessing child attributes through parent interface
             # We know that the Sensor has to be one of these Sensors
-            sensor = cast(HabitatSimVizSensors, sensor)
+            # sensor = cast(HabitatSimVizSensors, sensor)
             sim_sensor_cfg.sensor_type = sensor.sim_sensor_type
             sim_sensor_cfg.gpu2gpu_transfer = (
                 self.habitat_config.HABITAT_SIM_V0.GPU_GPU

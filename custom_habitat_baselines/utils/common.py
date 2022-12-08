@@ -337,14 +337,17 @@ def center_crop(
 def get_image_height_width(
     img: Union[Box, np.ndarray, torch.Tensor], channels_last: bool = False
 ) -> Tuple[int, int]:
-    if img.shape is None or len(img.shape) < 3 or len(img.shape) > 5:
+    if img.shape is None or len(img.shape) < 2 or len(img.shape) > 5:
         raise NotImplementedError()
-    if channels_last:
-        # NHWC
-        h, w = img.shape[-3:-1]
+    if len(img.shape) == 2:
+        h, w = img.shape
     else:
-        # NCHW
-        h, w = img.shape[-2:]
+        if channels_last:
+            # NHWC
+            h, w = img.shape[-3:-1]
+        else:
+            # NCHW
+            h, w = img.shape[-2:]
     return h, w
 
 

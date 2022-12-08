@@ -11,7 +11,7 @@ SIMULATOR:
   ACTION_SPACE_CONFIG: "v1"
   AGENTS: ['AGENT_0']
   AGENT_0:
-    SENSORS: ['RGB_SENSOR', 'DEPTH_SENSOR','COMPASS_SENSOR', 'GPS_SENSOR']
+    SENSORS: ['RGB_SENSOR', 'DEPTH_SENSOR'] #,'COMPASS_SENSOR', 'GPS_SENSOR'] # copied from TASK.SENSORS
     # HEIGHT: 1.25
     # RADIUS: 0.18
     HEIGHT: 0.88
@@ -41,8 +41,8 @@ TASK:
   TYPE: Nav-v0 #MultiNav-v0
   POSSIBLE_ACTIONS: ["STOP", "MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT", "LOOK_UP", "LOOK_DOWN"]
   SUCCESS_DISTANCE: 1.0
-  SENSORS: ['IMAGEGOAL_SENSOR','RGB_SENSOR', 'DEPTH_SENSOR','COMPASS_SENSOR', 'GPS_SENSOR', 'DEMONSTRATION_SENSOR', 'INFLECTION_WEIGHT_SENSOR']
-  GOAL_SENSOR_UUID: target_goal
+  SENSORS: ['IMAGEGOAL_SENSOR','RGB_SENSOR', 'DEPTH_SENSOR', 'COMPASS_SENSOR', 'GPS_SENSOR', 'DEMONSTRATION_SENSOR', 'INFLECTION_WEIGHT_SENSOR']
+  GOAL_SENSOR_UUID: image_goal
   MEASUREMENTS: ['DISTANCE_TO_GOAL', 'SUCCESS', 'SPL','TOP_DOWN_MAP', 'COLLISIONS']
 
   SUCCESS:
@@ -72,6 +72,7 @@ TASK:
   
   DISTANCE_TO_GOAL:
     TYPE: 'Custom_DistanceToGoal'
+    DISTANCE_TO: 'POINT'
   
   TOP_DOWN_MAP:
     DRAW_SOURCE: True
@@ -86,8 +87,7 @@ TASK:
   
 DATASET:
   TYPE: ImageNav-v1 # VisTargetNav-v1, ImageNav-v1
-  SPLIT: train
   #ON: 1_ON
-  DATA_PATH: "/data/hongxin_li/Habitat_web/datasets/objectnav/objectnav/{split}/{split}.json.gz" # _mp3d_70k
+  DATA_PATH: "/data/jing_li/habitat-lab/data/datasets/imagenav/mp3d/mp3d_70k/{split}/{split}.json.gz" # "/data/jing_li/habitat-lab/data/datasets/pointnav/mp3d/v1/{split}/{split}.json.gz"
   SCENES_DIR: "/data/jing_li/habitat-lab/data/scene_datasets"
   MAX_REPLAY_STEPS: 500

@@ -13,14 +13,28 @@ from typing import Any, DefaultDict, Dict, List, Optional
 
 import numpy as np
 import torch
+import torch.nn as nn
 import tqdm
 from torch.optim.lr_scheduler import LambdaLR
 
+import torch.nn.parallel
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.backends.cudnn as cudnn
+import torch.optim
+import torch.utils.data
+import torch.utils.data.distributed
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+from gym.spaces.box import Box
+
+import custom_habitat as habitat
 from custom_habitat import Config, logger
 from custom_habitat.utils import profiling_wrapper
 from custom_habitat.utils.visualizations.utils import observations_to_image
 
 from custom_habitat_baselines.common.base_trainer import BaseRLTrainer
+from custom_habitat_baselines.common.baseline_registry import baseline_registry
 from custom_habitat_baselines.common.environments import get_env_class
 from custom_habitat_baselines.common.obs_transformers import (
     apply_obs_transforms_batch,
@@ -40,11 +54,13 @@ from custom_habitat_baselines.utils.common import (
 from custom_habitat_baselines.utils.env_utils import construct_envs
 from custom_habitat_baselines.il.env_based.policy.rednet import load_rednet
 from env_utils import *
+from model import *
 from model.policy import CNNRNNPolicy
 
 import cv2
 import matplotlib.pyplot as plt
 
+@baseline_registry.register_trainer(name='il-trainer')
 class ILEnvTrainer(BaseRLTrainer):
     r"""Trainer class for behavior cloning.
     """
@@ -56,10 +72,13 @@ class ILEnvTrainer(BaseRLTrainer):
         self.agent = None
         self.envs = None
         self.obs_transforms = []
+        self.optimizer = None
+        self.semantic_predictor = None
+        self.mode = 'train'
         if config is not None:
             logger.info(f"config: {config}")
 
-    def _setup_actor_critic_agent(self, config: Config) -> None:
+    def _setup_actor_critic_agent(self, config: Config, args) -> None:
         r"""Sets up actor critic and agent for PPO.
 
         Args:
@@ -72,42 +91,74 @@ class ILEnvTrainer(BaseRLTrainer):
 
         model_config = self.config.MODEL
         observation_space = self.envs.observation_spaces[0]
+
+        if self.config.MODEL.USE_SEMANTICS:
+            observation_space.spaces['semantic'] = Box(
+                low=np.iinfo(np.uint32).min,
+                high=np.iinfo(np.uint32).max,
+                shape=(self.config.TASK_CONFIG.SIMULATOR.SEMANTIC_SENSOR.HEIGHT,
+                        self.config.TASK_CONFIG.SIMULATOR.SEMANTIC_SENSOR.WIDTH),
+                dtype=np.uint32,
+            )
+        
         self.obs_transforms = get_active_obs_transforms(self.config)
+
         observation_space = apply_obs_transforms_obs_space(
             observation_space, self.obs_transforms
         )
+        # compass:Box(-3.141592653589793, 3.141592653589793, (1,), float64)
+        # demonstration:Discrete(1)
+        # depth:Box(0.0, 1.0, (240, 320, 1), float32)
+        # gps:Box(-3.4028234663852886e+38, 3.4028234663852886e+38, (2,), float32)
+        # inflection_weight:Discrete(1), instruction:Box(0, 66, (11,), int64)
+        # rgb:Box(0, 255, (240, 320, 3), uint8))
+        # semantic:Box(0, 4294967295, (240, 320), uint32)
+        # instruction:Box(0, 66, (200,), int64)
+        
+
         self.obs_space = observation_space
+        if 'instruction' in self.obs_space.spaces.keys():
+            self.obs_space['instruction'].shape = (200,)
 
         model_config.defrost()
         model_config.TORCH_GPU_ID = self.config.TORCH_GPU_ID
         model_config.freeze()
 
-        self.policy = eval(config.POLICY)(
+        cudnn.benchmark = self.config.CUDNN.BENCHMARK
+        torch.backends.cudnn.deterministic = self.config.CUDNN.DETERMINISTIC
+        torch.backends.cudnn.enabled = self.config.CUDNN.ENABLED
+
+        policy = baseline_registry.get_policy(config.POLICY)
+        self.policy = policy.from_config(
             config,
             observation_space,
             self.envs.action_spaces[0]
             )
-        
-        self.policy.to(self.device)
 
-        optimizer = torch.optim.AdamW(
-            [{'params': list(filter(lambda p: p.requires_grad, self.policy.parameters())),
-            'initial_lr': config.BC.lr}],
-            lr=config.BC.lr,
-            eps=config.BC.eps,
+        gpus = self.config.TORCH_GPU_ID
+        self.device = (
+            torch.device("cuda", gpus[args.local_rank])
+            if torch.cuda.is_available()
+            else torch.device("cpu")
         )
-        
-        ckpt_file = config.BC.CKPT
-        if ckpt_file != '':
-            ckpt = torch.load(config.BC.CKPT, map_location="cpu")
-            self.policy.load_state_dict(ckpt['state_dict'])
-            optimizer.load_state_dict(ckpt['optimizer'])
-
-            self.ckpt_count = ckpt['extra_state'].get('count_checkpoints', -1)
-            self.resume_steps = ckpt['extra_state']['step']
-            print('############### Loading pretrained RL state dict (epoch {}) ###############'.format(self.resume_steps))
+        if self.mode == 'train':
+            self.optimizer = torch.optim.AdamW(
+                [{'params': list(filter(lambda p: p.requires_grad, self.policy.parameters())),
+                'initial_lr': config.BC.lr}],
+                lr=config.BC.lr,
+                eps=config.BC.eps,
+            )
             
-        self.semantic_predictor = None
+            ckpt_file = config.BC.CKPT
+            if ckpt_file != '':
+                ckpt = torch.load(config.BC.CKPT, map_location="cpu")
+                self.policy.load_state_dict(ckpt['state_dict'])
+                self.optimizer.load_state_dict(ckpt['optimizer'])
+
+                self.ckpt_count = ckpt['extra_state'].get('count_checkpoints', -1)
+                self.resume_steps = ckpt['extra_state']['step']
+                print('############### Loading pretrained RL state dict (epoch {}) ###############'.format(self.resume_steps))
+            
         if model_config.USE_SEMANTICS:
             self.semantic_predictor = load_rednet(
                 self.device,
@@ -117,9 +168,31 @@ class ILEnvTrainer(BaseRLTrainer):
             )
             self.semantic_predictor.eval()
 
+        # Distributed Computing
+        
+        self.master = True
+        if config.DISTRIBUTED and self.mode == 'train': # This block is not available
+            print('This process (local rank: {}) is using GPU {}'.format(args.local_rank, self.device))
+            self.master = args.local_rank == 0
+            dist.init_process_group(backend='nccl')
+
+            torch.cuda.set_device(self.device)
+            self.policy.cuda(self.device)
+
+            self.policy = nn.parallel.DistributedDataParallel(
+                self.policy,
+                device_ids=[self.device],
+                output_device=self.device,
+                find_unused_parameters=True
+            )
+            self.policy.forward = self.policy.module.act
+
+        else: # implement this block
+            self.policy.to(self.device)
+    
         self.agent = ILAgent(
             model=self.policy,
-            optimizer=optimizer,
+            optimizer=self.optimizer,
             num_envs=self.envs.num_envs,
             num_mini_batch=config.RL.PPO.num_mini_batch,
             max_grad_norm=config.BC.max_grad_norm,
@@ -131,8 +204,10 @@ class ILEnvTrainer(BaseRLTrainer):
         self, file_name: str, extra_state: Optional[Dict] = None
     ) -> None:
         checkpoint = {
-            "state_dict": self.agent.state_dict(),
-            "config": self.config,
+            "state_dict": self.policy.state_dict() if self.config.DISTRIBUTED \
+                else self.policy.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            "config": self.config
         }
 
         if extra_state is not None:
@@ -223,7 +298,6 @@ class ILEnvTrainer(BaseRLTrainer):
         observations, rewards_l, dones, infos = [
             list(x) for x in zip(*outputs)
         ]
-
         
         env_time += time.time() - t_step_env
 
@@ -234,7 +308,7 @@ class ILEnvTrainer(BaseRLTrainer):
             # Subtract 1 from class labels for THDA YCB categories
             if self.config.MODEL.SEMANTIC_ENCODER.is_thda:
                 batch["semantic"] = batch["semantic"] - 1
-        #batch = apply_obs_transforms_batch(batch, self.obs_transforms)
+        batch = apply_obs_transforms_batch(batch, self.obs_transforms)
 
         rewards = torch.tensor(
             rewards_l, dtype=torch.float, device=current_episode_reward.device
@@ -250,6 +324,7 @@ class ILEnvTrainer(BaseRLTrainer):
         current_episode_reward += rewards
         running_episode_stats["reward"] += (1 - masks) * current_episode_reward  # type: ignore
         running_episode_stats["count"] += 1 - masks  # type: ignore
+
         for k, v_k in self._extract_scalars_from_infos(infos).items():
             v = torch.tensor(
                 v_k, dtype=torch.float, device=current_episode_reward.device
@@ -260,7 +335,6 @@ class ILEnvTrainer(BaseRLTrainer):
                 )
 
             running_episode_stats[k] += (1 - masks) * v  # type: ignore
-
         current_episode_reward *= masks
 
         rollouts.insert(
@@ -288,7 +362,7 @@ class ILEnvTrainer(BaseRLTrainer):
         )
 
     @profiling_wrapper.RangeContext("train")
-    def train(self, rank=0, debug=0) -> None:
+    def train(self, args) -> None:
         r"""Main method for training PPO.
 
         Returns:
@@ -300,19 +374,30 @@ class ILEnvTrainer(BaseRLTrainer):
             num_steps_to_capture=config.PROFILING.NUM_STEPS_TO_CAPTURE,
         )
 
+        debug = args.debug
+        self.config.TASK_CONFIG.defrost()
+        self.config.TASK_CONFIG.DATASET.SPLIT = args.split
+        if debug != 0:
+            config.defrost()
+            config.NUM_PROCESSES = 1
+            config.SIMULATOR_GPU_ID = [config.SIMULATOR_GPU_ID[0]]
+            config.RL.PPO.num_mini_batch = 1
+            config.TASK_CONFIG.DATASET.SPLIT = 'sample'
+            # config.TASK_CONFIG.DATASET.DATA_PATH = "/data/hongxin_li/Habitat_web/datasets/objectnav/objectnav/{split}/{split}.json.gz"
+        
+        self.config.TASK_CONFIG.freeze()
+        config.freeze()
+        
+        env_class = baseline_registry.get_env(config.ENV_NAME)
+        assert env_class is not None, '{} is not defined or registered!'.format(config.ENV_NAME)
         self.envs = construct_envs(
-            config, env_class=eval(config.ENV_NAME)
+            config, env_class=env_class#eval(config.ENV_NAME)
         )
 
-        self.device = (
-            torch.device("cuda", config.TORCH_GPU_ID[rank])
-            if torch.cuda.is_available()
-            else torch.device("cpu")
-        )
         if not os.path.isdir(config.CHECKPOINT_FOLDER):
             os.makedirs(config.CHECKPOINT_FOLDER)
 
-        self._setup_actor_critic_agent(config)
+        self._setup_actor_critic_agent(config, args)
         logger.info(
             "agent number of parameters: {}".format(
                 sum(param.numel() for param in self.agent.parameters())
@@ -320,7 +405,7 @@ class ILEnvTrainer(BaseRLTrainer):
         )
 
         num_steps = 16 if debug else config.RL.PPO.num_steps
-
+        
         rollouts = RolloutStorage(
             num_steps,
             self.envs.num_envs,
@@ -328,23 +413,24 @@ class ILEnvTrainer(BaseRLTrainer):
             self.envs.action_spaces[0],
             config.MODEL.STATE_ENCODER.hidden_size,
             config.MODEL.STATE_ENCODER.num_recurrent_layers,
+            config.OBS_TO_SAVE
         )
         rollouts.to(self.device)
 
         observations = self.envs.reset()
         batch = batch_obs(observations, device=self.device)
-        #batch = apply_obs_transforms_batch(batch, self.obs_transforms)
-
+        batch = apply_obs_transforms_batch(batch, self.obs_transforms)
 
         for sensor in rollouts.observations:
-            rollouts.observations[sensor][0].copy_(batch[sensor])
             # Use first semantic observations from RedNet predictor as well
-            if sensor == "semantic" and config.MODEL.USE_SEMANTICS:
+            if sensor == "semantic":
                 semantic_obs = self.semantic_predictor(batch["rgb"], batch["depth"])
                 # Subtract 1 from class labels for THDA YCB categories
                 if config.MODEL.SEMANTIC_ENCODER.is_thda:
                     semantic_obs = semantic_obs - 1
                 rollouts.observations[sensor][0].copy_(semantic_obs)
+            else:
+                rollouts.observations[sensor][0].copy_(batch[sensor])
 
         # batch and observations may contain shared PyTorch CUDA
         # tensors.  We must explicitly clear them here otherwise
@@ -368,7 +454,6 @@ class ILEnvTrainer(BaseRLTrainer):
         start_steps = 0 if not hasattr(self, 'resume_steps') else self.resume_steps
         count_checkpoints = 0 if not hasattr(self, 'ckpt_count') else self.ckpt_count + 1
 
-
         lr_scheduler = LambdaLR(
             optimizer=self.agent.optimizer,
             lr_lambda=lambda x: linear_decay(x, config.NUM_UPDATES),  # type: ignore
@@ -378,12 +463,10 @@ class ILEnvTrainer(BaseRLTrainer):
         with TensorboardWriter(
             config.TENSORBOARD_DIR, flush_secs=self.flush_secs
         ) as writer:
-            num_updates = 3 if debug else config.NUM_UPDATES
+            num_updates = 5 if debug else config.NUM_UPDATES
             log_interval = 1 if debug else config.LOG_INTERVAL
             ckpt_interval = 1 if debug else config.CHECKPOINT_INTERVAL
 
-            input(debug)
-            input(num_updates)
             for update in range(num_updates):
                 profiling_wrapper.on_start_step()
                 profiling_wrapper.range_push("train update")
@@ -423,88 +506,87 @@ class ILEnvTrainer(BaseRLTrainer):
                     delta_pth_time,
                     total_loss
                 ) = self._update_agent(config, rollouts)
-                pth_time += delta_pth_time
+                
 
+                if self.master:
+                    pth_time += delta_pth_time
 
-                for k, v in running_episode_stats.items():
-                    window_episode_stats[k].append(v.clone())
+                    for k, v in running_episode_stats.items():
+                        window_episode_stats[k].append(v.clone())
 
-                deltas = {
-                    k: (
-                        (v[-1] - v[0]).sum().item()
-                        if len(v) > 1
-                        else v[0].sum().item()
-                    )
-                    for k, v in window_episode_stats.items()
-                }
-                deltas["count"] = max(deltas["count"], 1.0)
-
-                writer.add_scalar(
-                    "reward", deltas["reward"] / deltas["count"], count_steps
-                )
-
-                # Check to see if there are any metrics
-                # that haven't been logged yet
-                metrics = {
-                    k: v / deltas["count"]
-                    for k, v in deltas.items()
-                    if k not in {"reward", "count"}
-                }
-                if len(metrics) > 0:
-                    writer.add_scalars("metrics", metrics, count_steps)
-
-                losses = [total_loss]
-                writer.add_scalars(
-                    "losses",
-                    {k: l for l, k in zip(losses, ["action"])},
-                    count_steps,
-                )
-
-                # log stats
-                if update % log_interval == 0:
-                    logger.info(
-                        "update: {}\tfps: {:.3f}\tloss: {:.3f}".format(
-                            update, (count_steps  - start_steps) / (time.time() - t_start), total_loss
+                    deltas = {
+                        k: (
+                            (v[-1] - v[0]).sum().item()
+                            if len(v) > 1
+                            else v[0].sum().item()
                         )
+                        for k, v in window_episode_stats.items()
+                    }
+                    deltas["count"] = max(deltas["count"], 1.0)
+
+                
+                    writer.add_scalar(
+                        "reward", deltas["reward"] / deltas["count"], count_steps
                     )
 
-                    logger.info(
-                        "update: {}\tenv-time: {:.3f}s\tpth-time: {:.3f}s\t"
-                        "frames: {}".format(
-                            update, env_time, pth_time, count_steps
+                    # Check to see if there are any metrics
+                    # that haven't been logged yet
+                    metrics = {
+                        k: v / deltas["count"]
+                        for k, v in deltas.items()
+                        if k not in {"reward", "count"}
+                    }
+                    if len(metrics) > 0:
+                        writer.add_scalars("metrics", metrics, count_steps)
+
+                    losses = [total_loss]
+                    writer.add_scalars(
+                        "losses",
+                        {k: l for l, k in zip(losses, ["action"])},
+                        count_steps,
+                    )
+
+                    # log stats
+                    if update % log_interval == 0:
+                        logger.info(
+                            "update: {}\tfps: {:.3f}\tloss: {:.3f}\tenv-time: {:.3f}s\tpth-time: {:.3f}s\t"
+                            "frames: {}".format(
+                                update, (count_steps  - start_steps) / (time.time() - t_start), total_loss, env_time, pth_time, count_steps
+                            )
                         )
-                    )
 
-                    logger.info(
-                        "Average window size: {}  {}".format(
-                            len(window_episode_stats["count"]),
-                            "  ".join(
-                                "{}: {:.3f}".format(k, v / deltas["count"])
-                                for k, v in deltas.items()
-                                if k != "count"
-                            ),
+                        logger.info(
+                            "Average window size: {}  {}".format(
+                                len(window_episode_stats["count"]),
+                                "  ".join(
+                                    "{}: {:.3f}".format(k, v / deltas["count"])
+                                    for k, v in deltas.items()
+                                    if k != "count"
+                                ),
+                            )
                         )
-                    )
 
-   
-                # if update == config.MODEL.SWITCH_TO_PRED_SEMANTICS_UPDATE - 1:
-                #     self.save_checkpoint(
-                #         f"ckpt_gt_best.{count_checkpoints}.pth",
-                #         dict(step=count_steps),
-                #     )
+    
+                    # if update == config.MODEL.SWITCH_TO_PRED_SEMANTICS_UPDATE - 1:
+                    #     self.save_checkpoint(
+                    #         f"ckpt_gt_best.{count_checkpoints}.pth",
+                    #         dict(step=count_steps),
+                    #     )
 
-                # checkpoint model
-                if update % ckpt_interval == 0:
-                    self.save_checkpoint(
-                        "ckpt{}_frame{}.pth".format(count_checkpoints, count_steps), dict(step=count_steps, count_checkpoints=count_checkpoints)
-                    )
-                    count_checkpoints += 1
+                    # checkpoint model
+                    if update % ckpt_interval == 0:
+                        self.save_checkpoint(
+                            "ckpt{}_frame{}.pth".format(count_checkpoints, count_steps), dict(step=count_steps, count_checkpoints=count_checkpoints)
+                        )
+                        count_checkpoints += 1
 
-                profiling_wrapper.range_pop()  # train update
+                    profiling_wrapper.range_pop()  # train update
 
             self.envs.close()
+        
+        logger.info('Training finished. Time elapsed: {:.2f}m'.format((time.time() - t_start) / 60))
     
-    def eval(self, ckpt_dir) -> None:
+    def eval(self, args) -> None:
         r"""Main method of trainer evaluation. Calls _eval_checkpoint() that
         is specified in Trainer class that inherits from BaseRLTrainer
 
@@ -517,6 +599,21 @@ class ILEnvTrainer(BaseRLTrainer):
             else torch.device("cpu")
         )
 
+        self.mode = 'eval'
+
+        debug = args.debug
+        ckpt = args.ckpt
+
+        self.config.defrost()
+        self.config.VIDEO_OPTION = [args.video_type] # The way videos are recorded.
+        # self.config.NUM_PROCESSES = 1
+        if args.split != 'train':
+            self.config.TASK_CONFIG.DATASET.SPLIT = args.split
+
+        if debug:
+            self.config.NUM_PROCESSES = 1
+            self.config.SIMULATOR_GPU_ID = [self.config.SIMULATOR_GPU_ID[0]]
+
         if "tensorboard" in self.config.VIDEO_OPTION:
             assert (
                 len(self.config.TENSORBOARD_DIR) > 0
@@ -526,28 +623,40 @@ class ILEnvTrainer(BaseRLTrainer):
                 len(self.config.VIDEO_DIR) > 0
             ), "Must specify a directory for storing videos on disk"
 
+        if len(self.config.VIDEO_OPTION) > 0:
+            self.config.TASK_CONFIG.TASK.MEASUREMENTS.append("COLLISIONS")
+        self.config.freeze()
+
+        logger.info(f"env config: {self.config}")
+        
         with TensorboardWriter(
             self.config.TENSORBOARD_DIR, flush_secs=self.flush_secs
         ) as writer:
-            if os.path.isfile(ckpt_dir):
+
+            self._make_results_dir()
+
+            if os.path.isfile(ckpt):
                 # evaluate singe checkpoint
-                self._eval_checkpoint(ckpt_dir, writer)
+                self._eval_checkpoint(ckpt, args, writer, debug=debug)
             else:
                 # evaluate multiple checkpoints in order
+                assert args.video_type == '', 'Video mode is available when only one checkpoint is to be evaluated...'
                 prev_ckpt_ind = -1
                 while True:
                     current_ckpt = None
                     while current_ckpt is None:
                         current_ckpt = poll_checkpoint_folder(
-                            self.config.EVAL_CKPT_PATH_DIR, prev_ckpt_ind
+                            ckpt, prev_ckpt_ind
                         )
                         time.sleep(2)  # sleep for 2 secs before polling again
                     logger.info(f"=======current_ckpt: {current_ckpt}=======")
                     prev_ckpt_ind += 1
                     self._eval_checkpoint(
-                        checkpoint_path=current_ckpt,
+                        current_ckpt,
+                        args,
                         writer=writer,
                         checkpoint_index=prev_ckpt_ind,
+                        debug=debug
                     )
 
     def _make_results_dir(self, split="val"):
@@ -559,8 +668,10 @@ class ILEnvTrainer(BaseRLTrainer):
     def _eval_checkpoint(
         self,
         checkpoint_path: str,
+        args,
         writer: TensorboardWriter,
         checkpoint_index: int = 0,
+        debug = 0
     ) -> None:
         r"""Evaluates a single checkpoint.
 
@@ -572,16 +683,22 @@ class ILEnvTrainer(BaseRLTrainer):
         Returns:
             None
         """
+        #self.envs = construct_envs(self.config, eval(self.config.ENV_NAME))
+        env_class = baseline_registry.get_env(self.config.ENV_NAME)
+        assert env_class is not None, '{} is not defined or registered!'.format(self.config.ENV_NAME)
+        self.envs = construct_envs(
+            self.config,
+            env_class#eval(self.config.ENV_NAME)
+            )
+        self._setup_actor_critic_agent(self.config, args)
+
         # Map location CPU is almost always better than mapping to a CUDA device.
         ckpt_dict = self.load_checkpoint(checkpoint_path, map_location="cpu")
-
-        self._make_results_dir(self.config.EVAL.SPLIT)
 
         # if self.config.EVAL.USE_CKPT_CONFIG:
         #     conf = ckpt_dict["config"]
         #     config = self._setup_eval_config(ckpt_dict["config"])
         # else:
-        config = self.config.clone()
 
         # config = config.IL.BehaviorCloning
 
@@ -590,24 +707,19 @@ class ILEnvTrainer(BaseRLTrainer):
         # config.TASK_CONFIG.DATASET.TYPE = "ObjectNav-v1"
         # config.TASK_CONFIG.ENVIRONMENT.MAX_EPISODE_STEPS = 500
         # config.freeze()
-
-        if len(self.config.VIDEO_OPTION) > 0:
-            config.defrost()
-            config.TASK_CONFIG.TASK.MEASUREMENTS.append("COLLISIONS")
-            config.freeze()
-
-        logger.info(f"env config: {config}")
-        self.envs = construct_envs(config, get_env_class(config.ENV_NAME))
-        self._setup_actor_critic_agent(config, config.MODEL)
-
-        self.agent.load_state_dict(ckpt_dict["state_dict"], strict=True)    
-        self.policy = self.agent.model
+        
+        # TODO: 未来将只存储policy和optimizer的参数，不再存储ILAgent类的参数
+        self.policy.load_state_dict(ckpt_dict["state_dict"], strict=True)    
+        #self.policy = self.agent.model
         self.policy.eval()
 
         observations = self.envs.reset()
         batch = batch_obs(observations, device=self.device)
-        #batch = apply_obs_transforms_batch(batch, self.obs_transforms)
+        batch = apply_obs_transforms_batch(batch, self.obs_transforms)
 
+        # import matplotlib.pyplot as plt
+        # plt.imshow(batch["rgb"][0].cpu().numpy())
+        # plt.show()
         current_episode_reward = torch.zeros(
             self.envs.num_envs, 1, device=self.device
         )
@@ -615,7 +727,7 @@ class ILEnvTrainer(BaseRLTrainer):
         test_recurrent_hidden_states = torch.zeros(
             self.config.MODEL.STATE_ENCODER.num_recurrent_layers,
             self.config.NUM_PROCESSES,
-            config.MODEL.STATE_ENCODER.hidden_size,
+            self.config.MODEL.STATE_ENCODER.hidden_size,
             device=self.device,
         )
         prev_actions = torch.zeros(
@@ -624,21 +736,18 @@ class ILEnvTrainer(BaseRLTrainer):
         not_done_masks = torch.zeros(
             self.config.NUM_PROCESSES, 1, device=self.device
         )
-        stats_episodes: Dict[
-            Any, Any
-        ] = {}  # dict of dicts that stores stats per episode
+        stats_episodes = {}  # dict of dicts that stores stats per episode
 
         current_episode_steps = torch.zeros(
             self.envs.num_envs, 1, device=self.device
         )
 
-        rgb_frames = [
-            [] for _ in range(self.config.NUM_PROCESSES)
-        ]  # type: List[List[np.ndarray]]
+        rgb_frames = [[] for _ in range(self.config.NUM_PROCESSES)]  # type: List[List[np.ndarray]]
+        
         if len(self.config.VIDEO_OPTION) > 0:
             os.makedirs(self.config.VIDEO_DIR, exist_ok=True)
 
-        number_of_eval_episodes = self.config.TEST_EPISODE_COUNT
+        number_of_eval_episodes = -1 if debug == 0 else 10#self.config.TEST_EPISODE_COUNT
         if number_of_eval_episodes == -1:
             number_of_eval_episodes = sum(self.envs.number_of_episodes)
         else:
@@ -651,7 +760,10 @@ class ILEnvTrainer(BaseRLTrainer):
                 logger.warn(f"Evaluating with {total_num_eps} instead.")
                 number_of_eval_episodes = total_num_eps
 
+        logger.info('\n'+30*'-'+'\nEvaluating on {} episodes...\n'.format(number_of_eval_episodes)+30*'-'+'\n')
+
         pbar = tqdm.tqdm(total=number_of_eval_episodes)
+        
         while (
             len(stats_episodes) < number_of_eval_episodes
             and self.envs.num_envs > 0
@@ -663,10 +775,13 @@ class ILEnvTrainer(BaseRLTrainer):
                     batch["semantic"] = self.semantic_predictor(batch["rgb"], batch["depth"])
                     if self.config.MODEL.SEMANTIC_ENCODER.is_thda:
                         batch["semantic"] = batch["semantic"] - 1
-                (
+                
+                # 用正确的动作采样方式action = distribution.sample()，成功解决评估智能体时连续死锁导致成功率为0的问题
+                (   
+                    actions,
                     logits,
                     test_recurrent_hidden_states,
-                ) = self.policy(
+                ) = self.policy.act(
                     batch,
                     test_recurrent_hidden_states,
                     prev_actions,
@@ -674,8 +789,11 @@ class ILEnvTrainer(BaseRLTrainer):
                 )
                 current_episode_steps += 1
 
-                actions = torch.argmax(logits, dim=1)
-                prev_actions.copy_(actions.unsqueeze(1))  # type: ignore
+                # input(actions)
+                #actions = torch.argmax(logits, dim=1) # NOTE: Habitat-web这样的采样方式导致连续死锁，成功率为0
+                # input(actions)
+                prev_actions.copy_(actions)
+                # prev_actions.copy_(actions.unsqueeze(1))  # type: ignore
 
             # NB: Move actions to CPU.  If CUDA tensors are
             # sent in to env.step(), that will create CUDA contexts
@@ -690,7 +808,7 @@ class ILEnvTrainer(BaseRLTrainer):
                 list(x) for x in zip(*outputs)
             ]
             batch = batch_obs(observations, device=self.device)
-            #batch = apply_obs_transforms_batch(batch, self.obs_transforms)
+            batch = apply_obs_transforms_batch(batch, self.obs_transforms)
 
             not_done_masks = torch.tensor(
                 [[0.0] if done else [1.0] for done in dones],
@@ -706,6 +824,11 @@ class ILEnvTrainer(BaseRLTrainer):
             envs_to_pause = []
             n_envs = self.envs.num_envs
             for i in range(n_envs):
+                # print(stats_episodes)
+                # print((
+                #     next_episodes[i].scene_id,
+                #     next_episodes[i].episode_id,
+                # ))
                 if (
                     next_episodes[i].scene_id,
                     next_episodes[i].episode_id,
@@ -780,7 +903,7 @@ class ILEnvTrainer(BaseRLTrainer):
             )
 
         for k, v in aggregated_stats.items():
-            logger.info(f"Average episode {k}: {v:.4f}")
+            logger.info(f"Ckpt:{os.path.basename(checkpoint_path)} Average episode {k}: {v:.4f}")
 
         step_id = checkpoint_index
         if "extra_state" in ckpt_dict and "step" in ckpt_dict["extra_state"]:

@@ -6,8 +6,8 @@
 
 from custom_habitat.core.embodied_task import EmbodiedTask
 from custom_habitat.core.registry import registry
-
-
+#from .object_nav_task import *
+# from .nav import *
 def _try_register_nav_task():
     try:
         from custom_habitat.tasks.nav.nav import NavigationTask  # noqa

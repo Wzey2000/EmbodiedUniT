@@ -270,6 +270,7 @@ class EmbodiedTask:
             assert (
                 entity_type is not None
             ), f"invalid {entity_name} type {entity_cfg.TYPE}"
+
             entities[entity_name] = entity_type(
                 sim=self._sim,
                 config=entity_cfg,
@@ -281,6 +282,7 @@ class EmbodiedTask:
     def reset(self, episode: Episode):
         self._is_resetting = True
         observations = self._sim.reset()
+
         observations.update(
             self.sensor_suite.get_observations(
                 observations=observations, episode=episode, task=self

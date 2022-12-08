@@ -20,7 +20,7 @@ class CNNRNNRunner(nn.Module):
         observation_space = SpaceDict({
             'rgb': Box(low=0, high=256, shape=(240, 320, 3), dtype=np.float32),
             'depth': Box(low=0, high=256, shape=(240, 320, 1), dtype=np.float32),
-            'target_goal': Box(low=0, high=256, shape=(240, 320, 3), dtype=np.float32),
+            'image_goal': Box(low=0, high=256, shape=(240, 320, 3), dtype=np.float32),
             'step': Box(low=0, high=500, shape=(1,), dtype=np.float32),
             'prev_act': Box(low=0, high=3, shape=(1,), dtype=np.int32),
             'gt_action': Box(low=0, high=3, shape=(1,), dtype=np.int32),
@@ -70,6 +70,8 @@ class CNNRNNRunner(nn.Module):
         #self.calc_GFLOPs()
      
     def reset(self, obs):
+        # obs: dict_keys(['rgb', 'depth', 'image_goal', 'compass', 'gps', 'demonstration', 'inflection_weight', 'step', 'position', 'rotation',
+        # 'target_pose', 'distance', 'global_memory', 'global_act_memory', 'global_mask', 'global_A', 'global_time', 'localized_idx'])
         self.B = 1
         self.hidden_states = torch.zeros(self.agent.net.num_recurrent_layers, self.B,
                                          self.agent.net.output_size).to(self.torch_device)
@@ -104,7 +106,6 @@ class CNNRNNRunner(nn.Module):
                 dim=-1)
             new_obs['rotation'] -= self.initial_rot
         
-        new_obs['rgb'] = torch.cat([new_obs['rgb'], new_obs['target_goal']], dim=0)
         obs = new_obs
 
         t = time.time()

@@ -4,23 +4,21 @@ from custom_habitat import Config, Dataset
 import cv2
 import matplotlib
 import matplotlib.pyplot as plt
-from utils.vis_utils import observations_to_image, append_text_to_image
 from gym.spaces.dict import Dict as SpaceDict
 from gym.spaces.box import Box
 from gym.spaces.discrete import Discrete
 from custom_habitat.core.spaces import ActionSpace, EmptySpace
 import numpy as np
-from custom_habitat_baselines.utils.env_utils import RLEnv
+from custom_habitat import RLEnv
 from env_utils.custom_habitat_env import  MIN_DIST, MAX_DIST
 
 #from env_utils.custom_habitat_env import RLEnv, MIN_DIST, MAX_DIST
 import custom_habitat as habitat
-from custom_habitat.utils.visualizations.utils import images_to_video
 from custom_habitat.utils.visualizations import maps, utils
+from custom_habitat.utils.visualizations.utils import observations_to_image, append_text_to_image, images_to_video
 
 from env_utils.custom_habitat_map import TopDownGraphMap
 from custom_habitat.tasks.nav.shortest_path_follower import ShortestPathFollower
-import env_utils.noisy_actions
 from custom_habitat.sims.habitat_simulator.actions import HabitatSimActions
 from habitat_sim.utils.common import quat_to_coeffs
 
@@ -34,10 +32,10 @@ from custom_habitat.utils.geometry_utils import (
 
 from custom_habitat.core.registry import registry
 
-
 class SearchEnv(RLEnv):
     metadata = {'render.modes': ['rgb_array']}
     def __init__(self, config: Config, dataset: Optional[Dataset] = None):
+        print('\033[0;36;40m[task_search_env] Initializing SearchEnv...\033[0m\n')
         self.noise = config.noisy_actuation
         self.record = config.record
         self.render_map = getattr(config,'render_map',False) or self.record
@@ -46,7 +44,7 @@ class SearchEnv(RLEnv):
         task_config = config.TASK_CONFIG
         
         task_config.defrost()
-        task_config.TASK.SUCCESS.SUCCESS_DISTANCE = config.RL.SUCCESS_DISTANCE
+        # task_config.TASK.SUCCESS.SUCCESS_DISTANCE = config.RL.SUCCESS_DISTANCE
         if self.render_map:
             task_config.TASK.TOP_DOWN_GRAPH_MAP = config.TASK_CONFIG.TASK.TOP_DOWN_MAP.clone()
             task_config.TASK.TOP_DOWN_GRAPH_MAP.TYPE = "TopDownGraphMap"
@@ -62,36 +60,38 @@ class SearchEnv(RLEnv):
             task_config.TASK.MEASUREMENTS = [k for k in task_config.TASK.MEASUREMENTS if
                                                     'TOP_DOWN_MAP' != k]
         # task_config.SIMULATOR.ACTION_SPACE_CONFIG = "CustomActionSpaceConfiguration"
-        task_config.TASK.POSSIBLE_ACTIONS = task_config.TASK.POSSIBLE_ACTIONS + ['NOISY_FORWARD', 'NOISY_RIGHT', 'NOISY_LEFT']
-        task_config.TASK.ACTIONS.NOISY_FORWARD = habitat.config.Config()
-        task_config.TASK.ACTIONS.NOISY_FORWARD.TYPE = "NOISYFORWARD"
-        task_config.TASK.ACTIONS.NOISY_RIGHT = habitat.config.Config()
-        task_config.TASK.ACTIONS.NOISY_RIGHT.TYPE = "NOISYRIGHT"
-        task_config.TASK.ACTIONS.NOISY_LEFT = habitat.config.Config()
-        task_config.TASK.ACTIONS.NOISY_LEFT.TYPE = "NOISYLEFT"
+        # task_config.TASK.POSSIBLE_ACTIONS = task_config.TASK.POSSIBLE_ACTIONS + ['NOISY_FORWARD', 'NOISY_RIGHT', 'NOISY_LEFT']
+        # task_config.TASK.ACTIONS.NOISY_FORWARD = habitat.config.Config()
+        # task_config.TASK.ACTIONS.NOISY_FORWARD.TYPE = "NOISYFORWARD"
+        # task_config.TASK.ACTIONS.NOISY_RIGHT = habitat.config.Config()
+        # task_config.TASK.ACTIONS.NOISY_RIGHT.TYPE = "NOISYRIGHT"
+        # task_config.TASK.ACTIONS.NOISY_LEFT = habitat.config.Config()
+        # task_config.TASK.ACTIONS.NOISY_LEFT.TYPE = "NOISYLEFT"
         task_config.freeze()
         self.config = config
         self.task_config = task_config
 
         self._core_env_config = config.TASK_CONFIG
-        self.success_distance = config.RL.SUCCESS_DISTANCE
+        self.success_distance = config.TASK_CONFIG.TASK.SUCCESS.SUCCESS_DISTANCE
         self._previous_measure = None
         self._previous_action = -1
         self.time_t = 0
         self.stuck = 0
         self.follower = None
-        if 'NOISY_FORWARD' not in HabitatSimActions:
-            HabitatSimActions.extend_action_space("NOISY_FORWARD")
-            HabitatSimActions.extend_action_space("NOISY_RIGHT")
-            HabitatSimActions.extend_action_space("NOISY_LEFT")
+        # if 'NOISY_FORWARD' not in HabitatSimActions:
+        #     HabitatSimActions.extend_action_space("NOISY_FORWARD")
+        #     HabitatSimActions.extend_action_space("NOISY_RIGHT")
+        #     HabitatSimActions.extend_action_space("NOISY_LEFT")
 
-        if self.noise: moves = ["NOISY_FORWARD", "NOISY_LEFT", "NOISY_RIGHT", "LOOK_UP", "LOOK_DOWN"]
-        else: moves = ["MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT", "LOOK_UP", "LOOK_DOWN"]
-        if 'STOP' in task_config.TASK.POSSIBLE_ACTIONS:
-            self.action_dict = {id+1: move for id, move in enumerate(moves)}
-            self.action_dict[0] = "STOP"
-        else:
-            self.action_dict = {id: move for id, move in enumerate(moves)}
+        # if self.noise: moves = ["NOISY_FORWARD", "NOISY_LEFT", "NOISY_RIGHT", "LOOK_UP", "LOOK_DOWN"]
+        # else: moves = ["MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT", "LOOK_UP", "LOOK_DOWN"]
+        moves = ["STOP","MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT", "LOOK_UP", "LOOK_DOWN"]
+        # if 'STOP' in task_config.TASK.POSSIBLE_ACTIONS:
+        #     self.action_dict = {id+1: move for id, move in enumerate(moves)}
+        #     self.action_dict[0] = "STOP"
+        # else:
+        #     self.action_dict = {id: move for id, move in enumerate(moves)}
+        self.action_dict = {id: move for id, move in enumerate(moves)}
 
         self.SUCCESS_REWARD = self.config.RL.SUCCESS_REWARD
         self.COLLISION_REWARD = self.config.RL.COLLISION_REWARD
@@ -100,15 +100,15 @@ class SearchEnv(RLEnv):
         # Segmentation fault (core dumped) occurred here
         super().__init__(self._core_env_config, dataset)
 
-        act_dict = {"MOVE_FORWARD": EmptySpace(),
-                    'TURN_LEFT': EmptySpace(),
-                    'TURN_RIGHT': EmptySpace(),
-                    "LOOK_UP": EmptySpace(), 
-                    "LOOK_DOWN": EmptySpace()
-        }
-        if 'STOP' in task_config.TASK.POSSIBLE_ACTIONS:
-            act_dict.update({'STOP': EmptySpace()})
-        self.action_space = ActionSpace(act_dict)
+        # act_dict = {"MOVE_FORWARD": EmptySpace(),
+        #             'TURN_LEFT': EmptySpace(),
+        #             'TURN_RIGHT': EmptySpace(),
+        #             "LOOK_UP": EmptySpace(), 
+        #             "LOOK_DOWN": EmptySpace()
+        # }
+        # if 'STOP' in task_config.TASK.POSSIBLE_ACTIONS:
+        #     act_dict.update({'STOP': EmptySpace()})
+        # self.action_space = ActionSpace(act_dict)
 
 
         """
@@ -168,9 +168,8 @@ class SearchEnv(RLEnv):
             raise NotImplementedError
         print('[SearchEnv] Current difficulty %s, MIN_DIST %f, MAX_DIST %f - # goals %d'%(config.DIFFICULTY, self.habitat_env.MIN_DIST, self.habitat_env.MAX_DIST, self.habitat_env._num_goals))
 
-        self.get_reward = self.get_progress_reward
+        # self.get_reward = self.get_progress_reward
 
-        self.number_of_episodes = 1000
         self.has_log_info = None
 
         self.done_type = 0
@@ -203,7 +202,7 @@ class SearchEnv(RLEnv):
             if try_num > 100 and same_floor :
                 self.random_goals = goal_pose
                 break
-
+    
     def get_random_goal_action(self):
         return self.follower.get_next_action(self.random_goals)
 
@@ -228,6 +227,8 @@ class SearchEnv(RLEnv):
 
         self.num_goals = len(self.current_episode.goals)
         self._previous_measure = self.get_dist(self.curr_goal.position)
+
+        # self._env.get_metrics()['distance_to_goal'] attains the same result as self.get_dist
         self.initial_pose = self.current_position
 
         self.info = None
@@ -258,8 +259,8 @@ class SearchEnv(RLEnv):
         # obs['episode_id'] = self.current_episode.episode_id
         obs['step'] = self.time_t
         # Compass and GPS sensors are used, so there is no need to explicitly get agent poses here
-        # obs['position'] = self.current_position # habitat_env.sim.get_agent_state().position
-        # obs['rotation'] = self.current_rotation.components
+        obs['position'] = self.current_position # habitat_env.sim.get_agent_state().position
+        obs['rotation'] = self.current_rotation.components
         obs['target_pose'] = self.curr_goal.position
         obs['distance'] = self.get_dist(obs['target_pose'])
         #obs['target_idx'] = obs['target_goal'][0] if self.num_goals == 1 else obs['target_goal']
@@ -318,7 +319,7 @@ class SearchEnv(RLEnv):
             self.SUCCESS_REWARD + 1.0,
         )
 
-    def get_progress_reward(self, observations):
+    def get_reward(self, observations):
         reward = self.SLACK_REWARD
         current_measure = self.get_dist(self.curr_goal.position)
         self.move = self._previous_measure - current_measure

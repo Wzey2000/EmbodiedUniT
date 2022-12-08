@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # TODO, lots of typing errors in here
-
+import os, gzip, json
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -23,8 +23,12 @@ import attr
 import numpy as np
 from numpy import ndarray
 import torch
+import quaternion as q
 from gym import spaces
 from gym.spaces.box import Box
+
+from dtw import dtw
+from fastdtw import fastdtw
 
 import habitat_sim
 from custom_habitat.config import Config
@@ -51,7 +55,7 @@ from custom_habitat.core.simulator import (
 )
 from custom_habitat.core.utils import not_none_validator, try_cv2_import
 from custom_habitat.sims.habitat_simulator.actions import HabitatSimActions
-from custom_habitat.tasks.utils import cartesian_to_polar, get_habitat_sim_action
+from custom_habitat.tasks.utils import cartesian_to_polar, get_habitat_sim_action, merge_sim_episode_config
 from custom_habitat.utils.geometry_utils import (
     quaternion_from_coeff,
     quaternion_rotate_vector,
@@ -135,23 +139,6 @@ mapping_mpcat40_to_goal21 = {
 
 
 
-def merge_sim_episode_config(sim_config: Config, episode: Episode) -> Any:
-    sim_config.defrost()
-    sim_config.SCENE = episode.scene_id
-    sim_config.freeze()
-    if (
-        episode.start_position is not None
-        and episode.start_rotation is not None
-    ):
-        agent_name = sim_config.AGENTS[sim_config.DEFAULT_AGENT_ID]
-        agent_cfg = getattr(sim_config, agent_name)
-        agent_cfg.defrost()
-        agent_cfg.START_POSITION = episode.start_position
-        agent_cfg.START_ROTATION = episode.start_rotation
-        agent_cfg.IS_SET_START_STATE = True
-        agent_cfg.freeze()
-    return sim_config
-
 @attr.s(auto_attribs=True, kw_only=True)
 class AgentStateSpec:
     r"""Agent data specifications that capture states of agent and sensor in replay state.
@@ -160,7 +147,6 @@ class AgentStateSpec:
     rotation: Optional[List[float]] = attr.ib(default=None)
     sensor_data: Optional[dict] = attr.ib(default=None)
 
-
 @attr.s(auto_attribs=True, kw_only=True)
 class ReplayActionSpec:
     r"""Replay specifications that capture metadata associated with action.
@@ -168,14 +154,15 @@ class ReplayActionSpec:
     action: str = attr.ib(default=None, validator=not_none_validator)
     agent_state: Optional[AgentStateSpec] = attr.ib(default=None)
 
-
+"""
+Goal Definitions
+"""
 @attr.s(auto_attribs=True, kw_only=True)
 class NavigationGoal:
     r"""Base class for a goal specification hierarchy."""
 
     position: List[float] = attr.ib(default=None, validator=not_none_validator)
     radius: Optional[float] = None
-
 
 @attr.s(auto_attribs=True, kw_only=True)
 class RoomGoal(NavigationGoal):
@@ -185,29 +172,10 @@ class RoomGoal(NavigationGoal):
     room_name: Optional[str] = None
 
 @attr.s(auto_attribs=True, kw_only=True)
-class NavigationEpisode(Episode):
-    r"""Class for episode specification that includes initial position and
-    rotation of agent, scene name, goal and optional shortest paths. An
-    episode is a description of one task instance for the agent.
-
-    Args:
-        episode_id: id of episode in the dataset, usually episode number
-        scene_id: id of scene in scene dataset
-        start_position: numpy ndarray containing 3 entries for (x, y, z)
-        start_rotation: numpy ndarray with 4 entries for (x, y, z, w)
-            elements of unit quaternion (versor) representing agent 3D
-            orientation. ref: https://en.wikipedia.org/wiki/Versor
-        goals: list of goals specifications
-        start_room: room id
-        shortest_paths: list containing shortest paths to goals
-    """
-
-    goals: List[NavigationGoal] = attr.ib(
-        default=None, validator=not_none_validator
-    )
-    start_room: Optional[str] = None
-    shortest_paths: Optional[List[List[ShortestPathPoint]]] = None
-
+class ImageGoal(NavigationGoal):
+    position: List[float] = attr.ib(default=None, validator=not_none_validator)
+    rotation: List[float] = attr.ib(default=None, validator=not_none_validator)
+    radius: Optional[float] = 1.0
 
 @attr.s(auto_attribs=True)
 class ObjectViewLocation:
@@ -230,7 +198,6 @@ class ObjectViewLocation:
     """
     agent_state: AgentState
     iou: Optional[float] = 0.
-
 
 @attr.s(auto_attribs=True, kw_only=True)
 class ObjectGoal(NavigationGoal):
@@ -261,31 +228,14 @@ class ObjectGoal(NavigationGoal):
     room_name: Optional[str] = None
     view_points: Optional[List[ObjectViewLocation]] = None
 
+@attr.s(auto_attribs=True)
+class InstructionData:
+    instruction_text: str
+    instruction_tokens: Optional[List[str]] = None
 
-@attr.s(auto_attribs=True, kw_only=True)
-class ImageGoal(NavigationGoal):
-    position: List[float] = attr.ib(default=None, validator=not_none_validator)
-    rotation: List[float] = attr.ib(default=None, validator=not_none_validator)
-    radius: Optional[float] = 1.0
-
-@attr.s(auto_attribs=True, kw_only=True)
-class ObjectGoalNavEpisode(NavigationEpisode):
-    r"""ObjectGoal Navigation Episode
-
-    :param object_category: Category of the obect
-    """
-    object_category: Optional[str] = None
-    reference_replay: Optional[List[ReplayActionSpec]] = None
-    scene_state: Optional[List[SceneState]] = None
-    is_thda: Optional[bool] = False
-    scene_dataset: Optional[str] = "mp3d"
-
-    @property
-    def goals_key(self) -> str:
-        r"""The key to retrieve the goals"""
-        return f"{os.path.basename(self.scene_id)}_{self.object_category}"
-
-
+"""
+Episode Definitions
+"""
 
 @attr.s(auto_attribs=True, kw_only=True)
 class NavigationEpisode(Episode):
@@ -312,6 +262,76 @@ class NavigationEpisode(Episode):
     start_room: Optional[str] = None
     shortest_paths: Optional[List[List[ShortestPathPoint]]] = None
 
+@attr.s(auto_attribs=True, kw_only=True)
+class ObjectGoalNavEpisode(NavigationEpisode):
+    r"""ObjectGoal Navigation Episode
+
+    :param object_category: Category of the obect
+    """
+    object_category: Optional[str] = None
+    reference_replay: Optional[List[ReplayActionSpec]] = None
+    scene_state: Optional[List[SceneState]] = None
+    is_thda: Optional[bool] = False
+    scene_dataset: Optional[str] = "mp3d"
+
+    @property
+    def goals_key(self) -> str:
+        r"""The key to retrieve the goals"""
+        return f"{os.path.basename(self.scene_id)}_{self.object_category}"
+
+
+@attr.s(auto_attribs=True, kw_only=True)
+class VLNEpisode(NavigationEpisode):
+    r"""Specification of episode that includes initial position and rotation
+    of agent, goal specifications, instruction specifications, reference path,
+    and optional shortest paths.
+
+    Args:
+        episode_id: id of episode in the dataset
+        scene_id: id of scene inside the simulator.
+        start_position: numpy ndarray containing 3 entries for (x, y, z).
+        start_rotation: numpy ndarray with 4 entries for (x, y, z, w)
+            elements of unit quaternion (versor) representing agent 3D
+            orientation.
+        goals: list of goals specifications
+        reference_path: List of (x, y, z) positions which gives the reference
+            path to the goal that aligns with the instruction.
+        instruction: single natural language instruction guide to goal.
+        trajectory_id: id of ground truth trajectory path.
+    """
+    reference_path: List[List[float]] = attr.ib(
+        default=None, validator=not_none_validator
+    )
+    reference_replay: Optional[List[ReplayActionSpec]] = None
+    instruction: InstructionData = attr.ib(
+        default=None, validator=not_none_validator
+    )
+    trajectory_id: int = attr.ib(default=None, validator=not_none_validator)
+
+@attr.s(auto_attribs=True, kw_only=True)
+class UnifiedNavEpisode(Episode):
+    subtask = ""
+    goals: List[NavigationGoal] = attr.ib(
+        default=None, validator=not_none_validator
+    )
+    object_category: Optional[str] = None
+    reference_replay: Optional[List[ReplayActionSpec]] = None
+    start_room: Optional[str] = None
+    shortest_paths: Optional[List[List[ShortestPathPoint]]] = None
+    scene_state: Optional[List[SceneState]] = None
+    is_thda: Optional[bool] = False
+    scene_dataset: Optional[str] = "mp3d"
+    instruction: InstructionData = attr.ib(
+        default=None, validator=not_none_validator
+    )
+    @property
+    def goals_key(self) -> str:
+        r"""The key to retrieve the goals"""
+        return f"{os.path.basename(self.scene_id)}_{self.object_category}"
+
+"""
+Sensor Definitions
+"""
 
 class HabitatSimSensor:
     sim_sensor_type: habitat_sim.SensorType
@@ -359,7 +379,6 @@ class HabitatSimRGBSensor(RGBSensor):
         # remove alpha channel
         obs = obs[:, :, : self.RGBSENSOR_DIMENSION]  # type: ignore[index]
         return obs
-
 
 @registry.register_sensor#(name="CustomDepthSensor")
 class HabitatSimDepthSensor(DepthSensor):
@@ -423,6 +442,30 @@ class HabitatSimDepthSensor(DepthSensor):
 
         return obs
 
+@registry.register_sensor
+class HabitatSimSemanticSensor(SemanticSensor):
+    sim_sensor_type: habitat_sim.SensorType
+    sim_sensor_subtype = habitat_sim.SensorSubType.PINHOLE
+
+    def __init__(self, config, **kwargs: Any):
+        self.sim_sensor_type = habitat_sim.SensorType.SEMANTIC
+        self.config = config
+        super().__init__(config=config)
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any):
+        return spaces.Box(
+            low=np.iinfo(np.uint32).min,
+            high=np.iinfo(np.uint32).max,
+            shape=(self.config.HEIGHT, self.config.WIDTH),
+            dtype=np.uint32,
+        )
+
+    def get_observation(
+        self, observations: Dict[str, Union[ndarray, bool, "Tensor"]],*args: Any, **kwargs: Any
+    ) -> VisualObservation:
+        obs = observations.get(self.uuid, None)
+        check_sim_obs(obs, self)
+        return obs
 
 @registry.register_sensor(name="PanoramicPartRGBSensor")
 class PanoramicPartRGBSensor(RGBSensor):
@@ -534,7 +577,7 @@ class PanoramicRGBSensor(Sensor):
 
         # Defines the name of the sensor in the sensor suite dictionary
     def _get_uuid(self, *args: Any, **kwargs: Any):
-        return "panoramic_rgb"
+        return "rgb"
 
     def _get_sensor_type(self, *args: Any, **kwargs: Any):
         return SensorTypes.COLOR
@@ -543,7 +586,7 @@ class PanoramicRGBSensor(Sensor):
         return spaces.Box(
             low=0,
             high=255,
-            shape=(self.config.HEIGHT, 252, 3),
+            shape=(self.config.HEIGHT, self.config.WIDTH, 3),
             dtype=np.uint8,
         )
     # This is called whenver reset is called or an action is taken
@@ -578,12 +621,12 @@ class PanoramicDepthSensor(DepthSensor):
         return spaces.Box(
             low=self.depth_range[0],
             high=self.depth_range[1],
-            shape=(self.config.HEIGHT, 252, 1),
+            shape=(self.config.HEIGHT, self.config.WIDTH, 1),
             dtype=np.float32)
 
     # Defines the name of the sensor in the sensor suite dictionary
     def _get_uuid(self, *args: Any, **kwargs: Any):
-        return "panoramic_depth"
+        return "depth"
 
     def _get_sensor_type(self, *args: Any, **kwargs: Any):
         return SensorTypes.DEPTH
@@ -627,13 +670,17 @@ class PanoramicSemanticSensor(SemanticSensor):
 
     # Defines the name of the sensor in the sensor suite dictionary
     def _get_uuid(self, *args: Any, **kwargs: Any):
-        return "panoramic_semantic"
+        return "semantic"
     def _get_sensor_type(self, *args: Any, **kwargs: Any):
         return SensorTypes.SEMANTIC
     # This is called whenver reset is called or an action is taken
     def get_observation(self, observations,*args: Any, **kwargs: Any):
         depth_list = [observations['semantic_%d'%(i)] for i in range(self.num_camera)]
         return np.concatenate(depth_list,1)
+
+HabitatSimVizSensors = Union[
+    HabitatSimRGBSensor, HabitatSimDepthSensor, HabitatSimSemanticSensor
+]
 
 # Used for panoramic setting
 @registry.register_sensor(name="PanoImageGoalSensor")
@@ -972,6 +1019,7 @@ class PanoramicVisTargetSensor(Sensor):
 class DemonstrationSensor(Sensor):
     cls_uuid: str = "demonstration"
     def __init__(self, **kwargs):
+        self.uuid = "demonstration"
         self.observation_space = spaces.Discrete(1)
         self.timestep = 0
         self.prev_action = 0
@@ -990,8 +1038,7 @@ class DemonstrationSensor(Sensor):
         if task.is_resetting:  # reset
             self.timestep = 1
         
-        input(self.timestep)
-        if self.timestep < len(episode.reference_replay):
+        if episode.reference_replay is not None and self.timestep < len(episode.reference_replay):
             action_name = episode.reference_replay[self.timestep].action
             action = get_habitat_sim_action(action_name)
         else:
@@ -1008,6 +1055,7 @@ class DemonstrationSensor(Sensor):
 class InflectionWeightSensor(Sensor):
     cls_uuid = "inflection_weight"
     def __init__(self, config: Config, **kwargs):
+        self.uuid = "inflection_weight"
         self.observation_space = spaces.Discrete(1)
         self._config = config
         self.timestep = 0
@@ -1026,7 +1074,7 @@ class InflectionWeightSensor(Sensor):
             self.timestep = 0
         
         inflection_weight = 1.0
-        if self.timestep == 0:
+        if self.timestep == 0 or episode.reference_replay is None:
             inflection_weight = 1.0
         elif self.timestep >= len(episode.reference_replay):
             inflection_weight = 1.0 
@@ -1301,7 +1349,41 @@ class EpisodicGPSSensor(Sensor):
             return agent_position.astype(np.float32)
 
 
+@registry.register_sensor(name="InstructionSensor")
+class InstructionSensor(Sensor):
+    def __init__(self, **kwargs):
+        self.uuid = "instruction"
+        #self.observation_space = spaces.Discrete(0)
 
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.uuid
+
+    def _get_observation_space(self, *args: Any, **kwargs: Any):
+        return spaces.Box(
+            low=np.finfo(np.int64).min,
+            high=np.finfo(np.int64).max,
+            shape=(200,),
+            dtype=np.int64,
+        )
+
+    def _get_observation(
+        self,
+        observations: Dict[str, Observations],
+        episode: VLNEpisode,
+        **kwargs
+    ):
+        return {
+            "text": episode.instruction.instruction_text,
+            "tokens": episode.instruction.instruction_tokens,
+            "trajectory_id": episode.trajectory_id,
+        }
+
+    def get_observation(self, **kwargs):
+        return self._get_observation(**kwargs)
+
+"""
+Measures
+"""
 
 @registry.register_measure
 class Success(Measure):
@@ -1335,11 +1417,15 @@ class Success(Measure):
         distance_to_target = task.measurements.measures[
             DistanceToGoal.cls_uuid
         ].get_metric()
+        success_distance = self._config.SUCCESS_DISTANCE
+
+        # if hasattr(episode, "is_thda") and episode.is_thda:
+        #     success_distance = self._config.THDA_SUCCESS_DISTANCE
 
         if (
             hasattr(task, "is_stop_called")
             and task.is_stop_called  # type: ignore
-            and distance_to_target < self._config.SUCCESS_DISTANCE
+            and distance_to_target < success_distance
         ):
             self._metric = 1.0
         else:
@@ -1426,11 +1512,8 @@ class Success_MultiGoal(Success):
 
         self._metric = cur_goal_info['curr_goal_index'] / cur_goal_info['num_goals']
 
-
-
-
 @registry.register_measure(name='Custom_DistanceToGoal')
-class DistanceToGoal(Measure):
+class CustomDistanceToGoal(Measure):
     """The measure calculates a distance towards the goal.
     """
 
@@ -1453,6 +1536,15 @@ class DistanceToGoal(Measure):
         self._previous_position = None
         self._metric = None
         self.goal_idx = -1
+
+        # For ObjectNav
+        if self._config.DISTANCE_TO == "VIEW_POINTS":
+            self._episode_view_points = [
+                view_point.agent_state.position
+                for goal in episode.goals
+                for view_point in goal.view_points
+            ]
+
         self.update_metric(episode=episode, *args, **kwargs)
 
 
@@ -1472,6 +1564,79 @@ class DistanceToGoal(Measure):
                 distance_to_target = self._sim.geodesic_distance(
                     current_position,
                     episode.goals[self.goal_idx].position,
+                    episode,
+                )
+            elif self._config.DISTANCE_TO == "VIEW_POINTS":
+                if hasattr(episode, "is_thda") and episode.is_thda:
+                    distance_to_target = np.inf
+                    for goal in episode.goals:
+                        distance_to_goal = self._euclidean_distance(
+                            current_position, goal.position
+                        )
+                        distance_to_target = min(distance_to_target, distance_to_goal)
+                else:
+                    distance_to_target = self._sim.geodesic_distance(
+                        current_position, self._episode_view_points, episode
+                    )
+            else:
+                logger.error(
+                    f"Non valid DISTANCE_TO parameter was provided: {self._config.DISTANCE_TO}"
+                )
+
+            self._previous_position = current_position
+            
+            if distance_to_target == np.inf:
+                logger.info('\033[0;33;40m inf  \033[0m')
+            if not self._sim.pathfinder.is_navigable(episode.goals[self.goal_idx].position):
+                logger.info('\033[0;33;40m unnav  \033[0m')
+
+            self._metric = distance_to_target if distance_to_target != np.inf and self._sim.pathfinder.is_navigable(episode.goals[self.goal_idx].position) else 999.0
+
+
+@registry.register_measure(name='DistanceToGoal')
+class DistanceToGoal(Measure):
+    """The measure calculates a distance towards the goal."""
+
+    cls_uuid: str = "distance_to_goal"
+
+    def __init__(
+        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
+    ):
+        self._previous_position: Optional[Tuple[float, float, float]] = None
+        self._sim = sim
+        self._config = config
+        self._episode_view_points: Optional[
+            List[Tuple[float, float, float]]
+        ] = None
+
+        super().__init__(**kwargs)
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def reset_metric(self, episode, *args: Any, **kwargs: Any):
+        self._previous_position = None
+        self._metric = None
+        if self._config.DISTANCE_TO == "VIEW_POINTS":
+            self._episode_view_points = [
+                view_point.agent_state.position
+                for goal in episode.goals
+                for view_point in goal.view_points
+            ]
+        self.update_metric(episode=episode, *args, **kwargs)  # type: ignore
+
+    def update_metric(
+        self, episode: NavigationEpisode, *args: Any, **kwargs: Any
+    ):
+        current_position = self._sim.get_agent_state().position
+
+        if self._previous_position is None or not np.allclose(
+            self._previous_position, current_position, atol=1e-4
+        ):
+            if self._config.DISTANCE_TO == "POINT":
+                distance_to_target = self._sim.geodesic_distance(
+                    current_position,
+                    [goal.position for goal in episode.goals],
                     episode,
                 )
             elif self._config.DISTANCE_TO == "VIEW_POINTS":
@@ -1659,8 +1824,6 @@ class SoftSPL(SPL):
             )
         )
 
-
-
 @registry.register_sensor
 class ProximitySensor(Sensor):
     r"""Sensor for observing the distance to the closest obstacle
@@ -1707,52 +1870,6 @@ class ProximitySensor(Sensor):
         )
 
 
-@registry.register_measure
-class Success(Measure):
-    r"""Whether or not the agent succeeded at its task
-
-    This measure depends on DistanceToGoal measure.
-    """
-
-    cls_uuid: str = "success"
-
-    def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
-    ):
-        self._sim = sim
-        self._config = config
-
-        super().__init__()
-
-    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
-        return self.cls_uuid
-
-    def reset_metric(self, episode, task, *args: Any, **kwargs: Any):
-        task.measurements.check_measure_dependencies(
-            self.uuid, [DistanceToGoal.cls_uuid]
-        )
-        self.update_metric(episode=episode, task=task, *args, **kwargs)  # type: ignore
-
-    def update_metric(
-        self, episode, task: EmbodiedTask, *args: Any, **kwargs: Any
-    ):
-        distance_to_target = task.measurements.measures[
-            DistanceToGoal.cls_uuid
-        ].get_metric()
-        success_distance = self._config.SUCCESS_DISTANCE
-
-        if hasattr(episode, "is_thda") and episode.is_thda:
-            success_distance = self._config.THDA_SUCCESS_DISTANCE
-
-        if (
-            hasattr(task, "is_stop_called")
-            and task.is_stop_called  # type: ignore
-            and distance_to_target < success_distance
-        ):
-            self._metric = 1.0
-        else:
-            self._metric = 0.0
-
 
 @registry.register_measure
 class SPL(Measure):
@@ -1790,6 +1907,7 @@ class SPL(Measure):
         self._start_end_episode_distance = task.measurements.measures[
             DistanceToGoal.cls_uuid
         ].get_metric()
+
         self.update_metric(  # type:ignore
             episode=episode, task=task, *args, **kwargs
         )
@@ -1808,14 +1926,15 @@ class SPL(Measure):
         )
 
         self._previous_position = current_position
+        
         self._metric = ep_success * (
             self._start_end_episode_distance
             / max(
                 self._start_end_episode_distance, self._agent_episode_distance
             )
         )
-        # print(self._start_end_episode_distance, self._agent_episode_distance, self._metric)
 
+        # print(self._start_end_episode_distance, self._agent_episode_distance, self._metric)
 
 @registry.register_measure
 class SoftSPL(SPL):
@@ -2141,84 +2260,204 @@ class TopDownMap(Measure):
                 ),
             )
 
+def euclidean_distance(
+    pos_a: Union[List[float], ndarray], pos_b: Union[List[float], ndarray]
+) -> float:
+    return np.linalg.norm(np.array(pos_b) - np.array(pos_a), ord=2)
+
 
 @registry.register_measure
-class DistanceToGoal(Measure):
-    """The measure calculates a distance towards the goal."""
+class PathLength(Measure):
+    """Path Length (PL)
+    PL = sum(geodesic_distance(agent_prev_position, agent_position)
+            over all agent positions.
+    """
 
-    cls_uuid: str = "distance_to_goal"
+    cls_uuid: str = "path_length"
 
-    def __init__(
-        self, sim: Simulator, config: Config, *args: Any, **kwargs: Any
-    ):
-        self._previous_position: Optional[Tuple[float, float, float]] = None
+    def __init__(self, sim: Simulator, *args: Any, **kwargs: Any):
         self._sim = sim
-        self._config = config
-        self._episode_view_points: Optional[
-            List[Tuple[float, float, float]]
-        ] = None
-
         super().__init__(**kwargs)
 
     def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
         return self.cls_uuid
 
-    def reset_metric(self, episode, *args: Any, **kwargs: Any):
-        self._previous_position = None
-        self._metric = None
-        if self._config.DISTANCE_TO == "VIEW_POINTS":
-            self._episode_view_points = [
-                view_point.agent_state.position
-                for goal in episode.goals
-                for view_point in goal.view_points
-            ]
-        self.update_metric(episode=episode, *args, **kwargs)  # type: ignore
+    def reset_metric(self, *args: Any, **kwargs: Any):
+        self._previous_position = self._sim.get_agent_state().position
+        self._metric = 0.0
 
-    def _euclidean_distance(self, position_a, position_b):
-        return np.linalg.norm(position_b - position_a, ord=2)
-
-    def update_metric(
-        self, episode: NavigationEpisode, *args: Any, **kwargs: Any
-    ):
+    def update_metric(self, *args: Any, **kwargs: Any):
         current_position = self._sim.get_agent_state().position
+        self._metric += euclidean_distance(
+            current_position, self._previous_position
+        )
+        self._previous_position = current_position
 
-        if self._previous_position is None or not np.allclose(
-            self._previous_position, current_position, atol=1e-4
-        ):
-            if self._config.DISTANCE_TO == "POINT":
-                if hasattr(episode, "is_thda") and episode.is_thda:
-                    distance_to_target = np.inf
-                    for goal in episode.goals:
-                        distance_to_goal = self._euclidean_distance(
-                            current_position, goal.position
-                        )
-                        distance_to_target = min(distance_to_target, distance_to_goal)
-                else:
-                    distance_to_target = self._sim.geodesic_distance(
-                        current_position,
-                        [goal.position for goal in episode.goals],
-                        episode,
-                    )
-            elif self._config.DISTANCE_TO == "VIEW_POINTS":
-                if hasattr(episode, "is_thda") and episode.is_thda:
-                    distance_to_target = np.inf
-                    for goal in episode.goals:
-                        distance_to_goal = self._euclidean_distance(
-                            current_position, goal.position
-                        )
-                        distance_to_target = min(distance_to_target, distance_to_goal)
-                else:
-                    distance_to_target = self._sim.geodesic_distance(
-                        current_position, self._episode_view_points, episode
-                    )
-            else:
-                logger.error(
-                    f"Non valid DISTANCE_TO parameter was provided: {self._config.DISTANCE_TO}"
-                )
 
-            self._previous_position = current_position
-            self._metric = distance_to_target
+@registry.register_measure
+class OracleNavigationError(Measure):
+    """Oracle Navigation Error (ONE)
+    ONE = min(geosdesic_distance(agent_pos, goal)) over all points in the
+    agent path.
+    """
 
+    cls_uuid: str = "oracle_navigation_error"
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def reset_metric(self, *args: Any, task: EmbodiedTask, **kwargs: Any):
+        task.measurements.check_measure_dependencies(
+            self.uuid, [DistanceToGoal.cls_uuid]
+        )
+        self._metric = float("inf")
+        self.update_metric(task=task)
+
+    def update_metric(self, *args: Any, task: EmbodiedTask, **kwargs: Any):
+        distance_to_target = task.measurements.measures[
+            DistanceToGoal.cls_uuid
+        ].get_metric()
+        self._metric = min(self._metric, distance_to_target)
+
+
+@registry.register_measure
+class OracleSuccess(Measure):
+    """Oracle Success Rate (OSR). OSR = I(ONE <= goal_radius)"""
+
+    cls_uuid: str = "oracle_success"
+
+    def __init__(self, *args: Any, config: Config, **kwargs: Any):
+        self._config = config
+        super().__init__()
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def reset_metric(self, *args: Any, task: EmbodiedTask, **kwargs: Any):
+        task.measurements.check_measure_dependencies(
+            self.uuid, [DistanceToGoal.cls_uuid]
+        )
+        self._metric = 0.0
+        self.update_metric(task=task)
+
+    def update_metric(self, *args: Any, task: EmbodiedTask, **kwargs: Any):
+        d = task.measurements.measures[DistanceToGoal.cls_uuid].get_metric()
+        self._metric = float(self._metric or d < self._config.SUCCESS_DISTANCE)
+
+
+@registry.register_measure
+class OracleSPL(Measure):
+    """OracleSPL (Oracle Success weighted by Path Length)
+    OracleSPL = max(SPL) over all points in the agent path.
+    """
+
+    cls_uuid: str = "oracle_spl"
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def reset_metric(self, *args: Any, task: EmbodiedTask, **kwargs: Any):
+        task.measurements.check_measure_dependencies(self.uuid, ["spl"])
+        self._metric = 0.0
+
+    def update_metric(self, *args: Any, task: EmbodiedTask, **kwargs: Any):
+        spl = task.measurements.measures["spl"].get_metric()
+        self._metric = max(self._metric, spl)
+
+@registry.register_measure
+class StepsTaken(Measure):
+    """Counts the number of times update_metric() is called. This is equal to
+    the number of times that the agent takes an action. STOP counts as an
+    action.
+    """
+
+    cls_uuid: str = "steps_taken"
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def reset_metric(self, *args: Any, **kwargs: Any):
+        self._metric = 0.0
+
+    def update_metric(self, *args: Any, **kwargs: Any):
+        self._metric += 1.0
+
+@registry.register_measure
+class NDTW(Measure):
+    """NDTW (Normalized Dynamic Time Warping)
+    ref: https://arxiv.org/abs/1907.05446
+    """
+
+    cls_uuid: str = "ndtw"
+
+    def __init__(
+        self, *args: Any, sim: Simulator, config: Config, **kwargs: Any
+    ):
+        self._sim = sim
+        self._config = config
+        self.dtw_func = fastdtw if config.FDTW else dtw
+
+
+        with gzip.open(
+            config.GT_PATH.format(split=config.SPLIT), "rt"
+        ) as f:
+            self.gt_json = json.load(f)
+
+        super().__init__()
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def reset_metric(self, *args: Any, episode, **kwargs: Any):
+        self.locations = []
+        self.gt_locations = self.gt_json[str(episode.episode_id)]["locations"]
+        self.update_metric()
+
+    def update_metric(self, *args: Any, **kwargs: Any):
+        current_position = self._sim.get_agent_state().position.tolist()
+        if len(self.locations) == 0:
+            self.locations.append(current_position)
+        else:
+            if current_position == self.locations[-1]:
+                return
+            self.locations.append(current_position)
+
+        dtw_distance = self.dtw_func(
+            self.locations, self.gt_locations, dist=euclidean_distance
+        )[0]
+
+        nDTW = np.exp(
+            -dtw_distance
+            / (len(self.gt_locations) * self._config.SUCCESS_DISTANCE)
+        )
+        self._metric = nDTW
+
+
+@registry.register_measure
+class SDTW(Measure):
+    """SDTW (Success Weighted be nDTW)
+    ref: https://arxiv.org/abs/1907.05446
+    """
+
+    cls_uuid: str = "sdtw"
+
+    def _get_uuid(self, *args: Any, **kwargs: Any) -> str:
+        return self.cls_uuid
+
+    def reset_metric(self, *args: Any, task: EmbodiedTask, **kwargs: Any):
+        task.measurements.check_measure_dependencies(
+            self.uuid, [NDTW.cls_uuid, Success.cls_uuid]
+        )
+        self.update_metric(task=task)
+
+    def update_metric(self, *args: Any, task: EmbodiedTask, **kwargs: Any):
+        ep_success = task.measurements.measures[Success.cls_uuid].get_metric()
+        nDTW = task.measurements.measures[NDTW.cls_uuid].get_metric()
+        self._metric = ep_success * nDTW
+
+"""
+Action
+"""
 
 @registry.register_task_action
 class MoveForwardAction(SimulatorTaskAction):
@@ -2367,4 +2606,28 @@ class NavigationTask(EmbodiedTask):
         return merge_sim_episode_config(sim_config, episode)
 
     def _check_episode_is_active(self, *args: Any, **kwargs: Any) -> bool:
+        return not getattr(self, "is_stop_called", False)
+
+@registry.register_task(name="ObjectNav-v1")
+class ObjectNavigationTask(NavigationTask):
+    r"""An Object Navigation Task class for a task specific methods.
+    Used to explicitly state a type of the task in config.
+    """
+    _is_episode_active: bool
+    _prev_action: int
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._is_episode_active = False
+
+    def overwrite_sim_config(self, sim_config, episode):
+        super().overwrite_sim_config(sim_config, episode)
+
+        sim_config.defrost()
+        sim_config.scene_state = episode.scene_state
+        sim_config.freeze()
+        
+        return sim_config
+
+    def _check_episode_is_active(self,  action, *args: Any, **kwargs: Any) -> bool:
         return not getattr(self, "is_stop_called", False)

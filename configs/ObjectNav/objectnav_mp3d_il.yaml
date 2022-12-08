@@ -2,10 +2,12 @@ ENVIRONMENT:
   MAX_EPISODE_STEPS: 500
 
 SIMULATOR:
+  TYPE: 'Sim-0' # modified
   FORWARD_STEP_SIZE: 0.25
   TURN_ANGLE: 30
   TILT_ANGLE: 30
   ACTION_SPACE_CONFIG: "v1"
+  AGENTS: ['AGENT_0']
   AGENT_0:
     SENSORS: ['RGB_SENSOR', 'DEPTH_SENSOR']
     HEIGHT: 0.88
@@ -33,22 +35,18 @@ SIMULATOR:
 TASK:
   TYPE: ObjectNav-v1
   POSSIBLE_ACTIONS: ["STOP", "MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT", "LOOK_UP", "LOOK_DOWN"]
-  SUCCESS_DISTANCE: 0.1
+  SUCCESS_DISTANCE: 1.0
 
-  SENSORS: ['OBJECTGOAL_SENSOR', 'COMPASS_SENSOR', 'GPS_SENSOR', 'DEMONSTRATION_SENSOR', 'INFLECTION_WEIGHT_SENSOR']
+  SENSORS: ['OBJECTGOAL_SENSOR', 'RGB_SENSOR', 'DEPTH_SENSOR', 'COMPASS_SENSOR', 'GPS_SENSOR', 'DEMONSTRATION_SENSOR', 'INFLECTION_WEIGHT_SENSOR']
+  MEASUREMENTS: ['DISTANCE_TO_GOAL', 'SUCCESS', 'SPL', 'SOFT_SPL', 'GOAL_OBJECT_VISIBLE'] #, 'TOP_DOWN_MAP']
+
   GOAL_SENSOR_UUID: objectgoal
-  
-  OBJECTGOAL_SENSOR:
-    TYPE: "ObjectGoalSensor"
+
   RGB_SENSOR:
     TYPE: "HabitatSimRGBSensor"
   DEPTH_SENSOR:
     TYPE: "HabitatSimDepthSensor"
-  COMPASS_SENSOR:
-    TYPE: "CompassSensor"
-  GPS_SENSOR:
-    TYPE: "GPSSensor"
-    DIMENSIONALITY: 2
+  
   DEMONSTRATION_SENSOR:
     TYPE: DemonstrationSensor
   DEMONSTRATION_SENSOR_UUID: "demonstration"
@@ -57,8 +55,7 @@ TASK:
     INFLECTION_COEF: 3.477512060914205
   INFLECTION_WEIGHT_SENSOR_UUID: "inflection_weight"
 
-  MEASUREMENTS: ['DISTANCE_TO_GOAL', 'SUCCESS', 'SPL', 'SOFT_SPL', 'GOAL_OBJECT_VISIBLE'] #, 'TOP_DOWN_MAP']
-  
+
   TOP_DOWN_MAP:
     DRAW_GOAL_AABBS: False
     DRAW_SHORTEST_PATH: False
@@ -73,15 +70,19 @@ TASK:
     INSERTED_OBJECTS: False
 
   DISTANCE_TO_GOAL:
+    TYPE: 'DistanceToGoal'
     DISTANCE_TO: VIEW_POINTS
+
   SUCCESS:
-    SUCCESS_DISTANCE: 0.1
+    SUCCESS_DISTANCE: 1.0
     THDA_SUCCESS_DISTANCE: 1.0
-SEED: 1
+SEED: 103
 DATASET:
-  TYPE: ObjectNav-v2
+  TYPE: UnifiedNav-v1
   SPLIT: train
-  DATA_PATH: "/data/hongxin_li/Habitat_web/datasets/objectnav/objectnav_mp3d_70k/{split}/{split}.json.gz"
+  DATA_PATH: "/data/jing_li/habitat-lab/data/datasets/objectnav/mp3d/mp3d_70k/{split}/{split}.json.gz"
+  OBJECTNAV_DATA_PATH: "/data/jing_li/habitat-lab/data/datasets/objectnav/mp3d/mp3d_70k/{split}/{split}.json.gz"
+  VLN_DATA_PATH: ""
   SCENES_DIR: "/data/jing_li/habitat-lab/data/scene_datasets"
   MAX_REPLAY_STEPS: 500
 

@@ -1,0 +1,102 @@
+# for official settings, refer to https://github.com/joel99/objectnav/blob/main/configs/tasks/objectnav_mp3d.yaml
+ENVIRONMENT:
+  MAX_EPISODE_STEPS: 500
+  ITERATOR_OPTIONS:
+      MAX_SCENE_REPEAT_EPISODES: 100 #50
+SIMULATOR:
+  TYPE: 'Sim-0' # modified
+  TURN_ANGLE: 30
+  # TILT_ANGLE: 30
+  FORWARD_STEP_SIZE: 0.25
+  ACTION_SPACE_CONFIG: "v1"
+  AGENTS: ['AGENT_0']
+  AGENT_0:
+    SENSORS: ['RGB_SENSOR', 'DEPTH_SENSOR'] #,'COMPASS_SENSOR', 'GPS_SENSOR'] # copied from TASK.SENSORS
+    # HEIGHT: 1.25
+    # RADIUS: 0.18
+    HEIGHT: 0.88
+    RADIUS: 0.18
+  HABITAT_SIM_V0:
+    GPU_DEVICE_ID: 0
+    GPU_GPU: False
+    ALLOW_SLIDING: False
+  SEMANTIC_SENSOR:
+    WIDTH: 320
+    HEIGHT: 240
+    HFOV: 90
+    POSITION: [0, 0.88, 0]
+  RGB_SENSOR:
+    WIDTH: 320
+    HEIGHT: 240
+    HFOV: 90
+    POSITION: [0, 0.88, 0]
+  DEPTH_SENSOR:
+    WIDTH: 320
+    HEIGHT: 240
+    HFOV: 90
+    MIN_DEPTH: 0.5
+    MAX_DEPTH: 5.0
+    POSITION: [0, 0.88, 0]
+TASK:
+  TYPE: ObjectNav-v1
+  POSSIBLE_ACTIONS: ["STOP", "MOVE_FORWARD", "TURN_LEFT", "TURN_RIGHT"] #, "LOOK_UP", "LOOK_DOWN"]
+  SUCCESS_DISTANCE: 3.0
+  SENSORS: ['INSTRUCTION_SENSOR','RGB_SENSOR', 'DEPTH_SENSOR', 'COMPASS_SENSOR', 'GPS_SENSOR', 'DEMONSTRATION_SENSOR', 'INFLECTION_WEIGHT_SENSOR'] #'INFLECTION_WEIGHT_SENSOR' 'RGB_SENSOR', 'DEPTH_SENSOR', "PANORAMIC_SENSOR", "PANORAMIC_DEPTH_SENSOR"
+  MEASUREMENTS: ['DISTANCE_TO_GOAL', 'SUCCESS', 'SPL','TOP_DOWN_MAP', 'COLLISIONS', NDTW, PATH_LENGTH, ORACLE_NAVIGATION_ERROR, ORACLE_SUCCESS, STEPS_TAKEN]
+
+  SUCCESS:
+    SUCCESS_DISTANCE: 3.0
+  
+  GOAL_INDEX: # modified
+    TYPE: "Goal_Index" # See its definition in line 372 in custom_habitat_task.py. It should be the same as the class register name
+  
+  INSTRUCTION_SENSOR_UUID: "instruction"
+  INSTRUCTION_SENSOR:
+    TYPE: 'InstructionSensor'
+  RGB_SENSOR:
+    TYPE: "HabitatSimRGBSensor"
+  DEPTH_SENSOR:
+    TYPE: "HabitatSimDepthSensor"
+  COMPASS_SENSOR:
+    TYPE: "CompassSensor"
+  GPS_SENSOR:
+    TYPE: "GPSSensor"
+    DIMENSIONALITY: 2
+  DEMONSTRATION_SENSOR:
+    TYPE: DemonstrationSensor
+  DEMONSTRATION_SENSOR_UUID: "demonstration"
+  INFLECTION_WEIGHT_SENSOR:
+    TYPE: InflectionWeightSensor
+    INFLECTION_COEF: 3.477512060914205
+  INFLECTION_WEIGHT_SENSOR_UUID: "inflection_weight"
+  
+  DISTANCE_TO_GOAL:
+    TYPE: 'DistanceToGoal'
+    DISTANCE_TO: 'POINT'
+  NDTW:
+    # SPLIT: adaptively set in il-trainer.py
+    GT_PATH: "/data/jing_li/habitat-lab/data/datasets/VLN/VLNCE_R2R/{split}/{split}_gt.json.gz"
+
+  ORACLE_SUCCESS:
+    TYPE: "OracleSuccess"
+    ORACLE_SUCCESS.SUCCESS_DISTANCE: 3.0
+  
+  TOP_DOWN_MAP:
+    DRAW_SOURCE: True
+    DRAW_SHORTHEST_PATH: True
+    DRAW_VIEW_POINTS: False
+    DRAW_GOAL_POSITIONS: True
+    DRAW_GOAL_AABBS: False
+    FOG_OF_WAR:
+      VISIBILITAY_DIST: 2.0
+      FOV: 360
+      DRAW: True
+
+DATASET:
+  TYPE: UnifiedNav-v1
+  #ON: 1_ON
+  DATA_PATH: "/data/jing_li/habitat-lab/data/datasets/imagenav/mp3d/mp3d_70k/{split}/{split}.json.gz" # "/data/jing_li/habitat-lab/data/datasets/pointnav/mp3d/v1/{split}/{split}.json.gz"
+  OBJECTNAV_DATA_PATH: "" # "/data/jing_li/habitat-lab/data/datasets/objectnav/mp3d/mp3d_70k/{split}/{split}.json.gz"
+  VLN_DATA_PATH: "/data/jing_li/habitat-lab/data/datasets/VLN/VLNCE_R2R/{split}/{split}.json.gz"
+  SCENES_DIR: "/data/jing_li/habitat-lab/data/scene_datasets"
+  MAX_REPLAY_STEPS: 500

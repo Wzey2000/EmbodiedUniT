@@ -1,13 +1,15 @@
 VERSION: CNNRNN_woPose_envbased
 runner: 'CNNRNNRunner'
 scene_data: 'mp3d'
-BASE_TASK_CONFIG_PATH: "configs/vistargetnav_mp3d.yaml"
+BASE_TASK_CONFIG_PATH: "vistargetnav_mp3d.yaml"
 IL_TRAINER_NAME: "ILEnvTrainer"
 RL_TRAINER_NAME: "PPOTrainer_Memory_aux"
 ENV_NAME: "SearchEnv"
 
+EVAL_SPLIT: "val"
+
 SIMULATOR_GPU_ID: 0
-TORCH_GPU_ID: [0,1,2,3]
+TORCH_GPU_ID: [1,2,3]
 
 DISTRIBUTED: True
 CUDNN:
@@ -15,10 +17,10 @@ CUDNN:
   DETERMINISTIC: False
   ENABLED: True
 
-NUM_PROCESSES: 2
+NUM_PROCESSES: 1
 NUM_VAL_PROCESSES: 0
 
-SENSORS: ["DEPTH_SENSOR", "RGB_SENSOR"]
+SENSORS: ["DEPTH_SENSOR", "RGB_SENSOR"] # used to replace AGENT_0.SENSORS in construct_env function
 
 OBS_TO_SAVE: ['rgb', 'depth','goal_embedding', 'episode_info', 'target_goal', 'compass', 'gps',
               'step', 'have_been', 'target_dist_score']
@@ -40,7 +42,7 @@ memory:
 RL:
   PPO:
     num_mini_batch: 2
-    num_steps: 128
+    num_steps: 256
 
 BC:
   CKPT: ''
@@ -50,6 +52,6 @@ BC:
   eps: 1.0e-5
   max_grad_norm: 0.2
   max_demo_length: 100
-  batch_size: 16
-  num_workers: 4
+  batch_size: 24
+  num_workers: 8
 

@@ -220,7 +220,10 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
 
     def __init__(self, config: Optional[Config] = None) -> None:
         self.goals_by_category = {}
-        self.max_replay_steps = config.MAX_REPLAY_STEPS
+        if config is not None:
+            self.max_replay_steps = config.MAX_REPLAY_STEPS
+        else:
+            self.max_replay_steps = 500
         super().__init__(config)
         self.episodes = list(self.episodes)
 
@@ -275,6 +278,10 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
             self.goals_by_category[k] = [self.__deserialize_goal(g) for g in v]
 
         for i, episode in enumerate(deserialized["episodes"]):
+            
+            if episode.get('reference_replay', None) is not None and len(episode['reference_replay']) > self.max_replay_steps:
+                continue
+            
             if "_shortest_path_cache" in episode:
                 del episode["_shortest_path_cache"]
             
@@ -329,8 +336,7 @@ class ObjectNavDatasetV2(PointNavDatasetV1):
 
                         path[p_index] = ShortestPathPoint(**point)
             
-            if len(episode.reference_replay) > self.max_replay_steps:
-                continue
+            
 
             self.episodes.append(episode)  # type: ignore [attr-defined]
 

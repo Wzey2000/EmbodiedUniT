@@ -2,32 +2,19 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import os
 from typing import Any, List, Optional
 
 import attr
 from cv2 import log
 import numpy as np
-from gym import spaces
 
-from custom_habitat.config import Config
-from custom_habitat.core.dataset import SceneState
-from custom_habitat.core.logging import logger
 from custom_habitat.core.registry import registry
-from habitat.core.simulator import AgentState, Sensor, SensorTypes
-from custom_habitat.core.utils import not_none_validator
-from custom_habitat.tasks.nav.nav import (
+
+from .nav import (
     NavigationEpisode,
     NavigationGoal,
     NavigationTask
 )
-
-try:
-    from custom_habitat.datasets.object_nav.object_nav_dataset import (
-        ObjectNavDatasetV1,
-    )
-except ImportError:
-    pass
 
 
 @registry.register_task(name="ObjectNav-v1")

@@ -1,0 +1,70 @@
+VERSION: VLN_CNNRNN
+runner: 'CNNRNNRunner'
+scene_data: 'mp3d'
+BASE_TASK_CONFIG_PATH: "vistargetnav_mp3d.yaml"
+IL_TRAINER_NAME: "ILEnvTrainer"
+RL_TRAINER_NAME: "PPOTrainer_Memory_aux"
+ENV_NAME: "NavRLEnv"
+
+EVAL_SPLIT: "val"
+
+SIMULATOR_GPU_ID: [4,5]
+TORCH_GPU_ID: [0,1,2,3]
+
+DISTRIBUTED: True
+CUDNN:
+  BENCHMARK: True
+  DETERMINISTIC: False
+  ENABLED: True
+
+NUM_PROCESSES: 4
+NUM_VAL_PROCESSES: 0
+
+# SENSORS: ["DEPTH_SENSOR", "RGB_SENSOR"] # used to replace AGENT_0.SENSORS in construct_env function
+
+OBS_TO_SAVE: ['rgb', 'depth', 'image_goal', 'compass', 'gps', 'step', 'demonstration', 'inflection_weight', 'instruction']
+POLICY: 'VLNPolicy'
+WRAPPER: 'BaseGraphWrapper'
+
+NUM_UPDATES: 40000
+LOG_INTERVAL: 10
+CHECKPOINT_INTERVAL: 20
+VIS_INTERVAL: 10
+
+REWARD_METHOD: 'progress'
+USE_AUXILIARY_INFO: False # 暂时关闭辅助任务
+USE_GPS_COMPASS: True
+
+MODEL:
+  DEPTH_ENCODER:
+    ddppo_checkpoint: "./pretrained_models//gibson-2plus-resnet50.pth"
+
+  STATE_ENCODER:
+    hidden_size: 512
+    num_recurrent_layers: 3
+    rnn_type: 'GRU'
+
+memory:
+  memory_size: 501
+
+RL:
+  PPO:
+    use_linear_lr_decay: True
+    use_linear_clip_decay: False
+    max_grad_norm: 0.2
+    num_mini_batch: 1
+    num_steps: 128
+  POLICY:
+    OBS_TRANSFORMS:
+      ENABLED_TRANSFORMS: [ResizeShortestEdge]
+      RESIZE_SHORTEST_EDGE:
+        SIZE: 240
+BC:
+  CKPT: ''
+  max_epoch: 25
+  USE_IW: True
+  lr: 0.001
+  eps: 1.0e-5
+  max_grad_norm: 0.2
+  max_demo_length: 100
+

@@ -13,8 +13,8 @@ from custom_habitat.config import Config
 from custom_habitat.core.dataset import ALL_SCENES_MASK, Dataset
 from custom_habitat.core.registry import registry
 from custom_habitat.tasks.nav.nav import (
-    NavigationEpisode,
     NavigationGoal,
+    NavigationEpisode,
     ShortestPathPoint,
 )
 
@@ -40,7 +40,7 @@ class PointNavDatasetV1(Dataset):
         r"""Return list of scene ids for which dataset has separate files with
         episodes.
         """
-        assert cls.check_config_paths_exist(config)
+        assert cls.check_config_paths_exist(config), '{} or {} does not exist'.format(config.DATA_PATH.format(split=config.SPLIT), config.SCENES_DIR)
         dataset_dir = os.path.dirname(
             config.DATA_PATH.format(split=config.SPLIT)
         )
@@ -90,6 +90,8 @@ class PointNavDatasetV1(Dataset):
             return
 
         datasetfile_path = config.DATA_PATH.format(split=config.SPLIT)
+        self.datasetfile_path = datasetfile_path
+        print('\033[0;36;40m[pointnav_dataset] Loading dataset from: {}\033[0m\n'.format(datasetfile_path))
         with gzip.open(datasetfile_path, "rt") as f:
             self.from_json(f.read(), scenes_dir=config.SCENES_DIR)
 
@@ -101,7 +103,7 @@ class PointNavDatasetV1(Dataset):
             )
         )
         if has_individual_scene_files:
-            scenes = config.CONTENT_SCENES
+            scenes = config.CONTENT_SCENES # may be [*] which means all scenes
             if ALL_SCENES_MASK in scenes:
                 scenes = self._get_scenes_from_folder(
                     content_scenes_path=self.content_scenes_path,
@@ -113,6 +115,7 @@ class PointNavDatasetV1(Dataset):
                     data_path=dataset_dir, scene=scene
                 )
                 with gzip.open(scene_filename, "rt") as f:
+                    # from_json in this class is rewritten in child classes (e.g. ImageNavDatasetV1)
                     self.from_json(f.read(), scenes_dir=config.SCENES_DIR)
 
         else:
@@ -126,6 +129,8 @@ class PointNavDatasetV1(Dataset):
         deserialized = json.loads(json_str)
         if CONTENT_SCENES_PATH_FIELD in deserialized:
             self.content_scenes_path = deserialized[CONTENT_SCENES_PATH_FIELD]
+
+        print('[PointNav-v1] Loading {} episodes\n'.format(len(deserialized["episodes"])))
 
         for episode in deserialized["episodes"]:
             episode = NavigationEpisode(**episode)

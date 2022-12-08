@@ -1,11 +1,7 @@
 from gym.wrappers.monitor import Wrapper
 import torch
-import numpy as np
-from utils.ob_utils import log_time
-
+from custom_habitat.utils.ob_utils import batch_obs, log_time
 TIME_DEBUG = False
-from utils.ob_utils import batch_obs
-
 # this wrapper comes after vectorenv
 from custom_habitat.core.vector_env import VectorEnv
 

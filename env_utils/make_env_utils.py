@@ -49,7 +49,11 @@ def add_camera(task_config, normalize_depth=True):
     #     sensors.append('DEPTH_SENSOR')
 
     #task_config.SIMULATOR.AGENT_0.SENSORS = sensors
-
+    use_semantic = 'SEMANTIC_SENSOR' in task_config.TASK.SENSORS
+    if use_semantic:
+        task_config.TASK.SEMANTIC_SENSOR.HEIGHT = task_config.SIMULATOR.SEMANTIC_SENSOR.HEIGHT
+        task_config.TASK.SEMANTIC_SENSOR.WIDTH = task_config.SIMULATOR.SEMANTIC_SENSOR.WIDTH
+    
     if 'IMAGEGOAL_SENSOR' in task_config.TASK.SENSORS:
         #task_config.TASK.SENSORS = sensors_with_ids + [IMAGEGOAL_SENSOR]
         #new_imagegoal_sensor_config.TASK.IMAGEGOAL_SENSOR = habitat.Config()
@@ -79,6 +83,7 @@ def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
     use_depth = 'PANORAMIC_DEPTH_SENSOR' in task_config.TASK.SENSORS
     sensors_with_ids = []
     sensors = []
+
     for camera_idx in range(num_of_camera):
         curr_angle = angles[camera_idx]
         if curr_angle > 3.14:
@@ -111,8 +116,9 @@ def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
     # sensor_dict = {'TYPE': 'PanoramicRGBSensor', 'WIDTH': task_config.SIMULATOR.RGB_SENSOR.HEIGHT * 4,
     #              'HEIGHT': task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT, 'NUM_CAMERA': num_of_camera,
     #              'AGENT_ID': str(id)}
-    sensor_dict = {'TYPE': 'PanoramicRGBSensor', 'WIDTH': task_config.SIMULATOR.RGB_SENSOR.HEIGHT,
-                 'HEIGHT': task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT, 'NUM_CAMERA': num_of_camera,
+    sensor_dict = {'TYPE': 'PanoramicRGBSensor',
+                 'HEIGHT': task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT, 'WIDTH': task_config.SIMULATOR.RGB_SENSOR_0.WIDTH * num_of_camera,
+                 'NUM_CAMERA': num_of_camera,
                  'AGENT_ID': str(id)}
     task_config.TASK['PANORAMIC_SENSOR'] = habitat.Config()
     task_config.TASK['PANORAMIC_SENSOR'].update(sensor_dict)
@@ -120,6 +126,7 @@ def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
     if use_depth:
         task_config.TASK['PANORAMIC_DEPTH_SENSOR'] = task_config.TASK['PANORAMIC_SENSOR'].clone()
         task_config.TASK['PANORAMIC_DEPTH_SENSOR'].TYPE = 'PanoramicDepthSensor'
+        task_config.TASK['PANORAMIC_DEPTH_SENSOR'].WIDTH = task_config.SIMULATOR.RGB_SENSOR_0.WIDTH * num_of_camera
         task_config.TASK['PANORAMIC_DEPTH_SENSOR'].NORMALIZE_DEPTH = True
         task_config.TASK['PANORAMIC_DEPTH_SENSOR'].MIN_DEPTH = 0.0
         task_config.TASK['PANORAMIC_DEPTH_SENSOR'].MAX_DEPTH = 10.0
@@ -128,7 +135,7 @@ def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
         task_config.TASK['PANORAMIC_SEMANTIC_SENSOR'] = task_config.TASK['PANORAMIC_SENSOR'].clone()
         task_config.TASK['PANORAMIC_SEMANTIC_SENSOR'].TYPE = 'PanoramicSemanticSensor'
         sensors_with_ids.append('PANORAMIC_SEMANTIC_SENSOR')
-    if has_target:
+    if 'CUSTOM_VISTARGET_SENSOR' in task_config.TASK.SENSORS:
         task_config.TASK.SENSORS = sensors_with_ids + ['CUSTOM_VISTARGET_SENSOR']
         task_config.TASK.CUSTOM_VISTARGET_SENSOR = habitat.Config()
         task_config.TASK.CUSTOM_VISTARGET_SENSOR.TYPE = 'CustomVisTargetSensor'
@@ -136,8 +143,8 @@ def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
         # task_config.TASK.CUSTOM_VISTARGET_SENSOR.WIDTH = task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT * 4
         task_config.TASK.CUSTOM_VISTARGET_SENSOR.WIDTH = task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT
         task_config.TASK.CUSTOM_VISTARGET_SENSOR.HEIGHT = task_config.SIMULATOR.RGB_SENSOR_0.HEIGHT
-    else:
-        task_config.TASK.SENSORS.remove('CUSTOM_VISTARGET_SENSOR')
+    # else:
+    #     task_config.TASK.SENSORS.remove('CUSTOM_VISTARGET_SENSOR')
 
     task_config.TASK.SUCCESS = habitat.Config()
     if "STOP" not in task_config.TASK.POSSIBLE_ACTIONS:
@@ -145,7 +152,7 @@ def add_panoramic_camera(task_config, normalize_depth=True, has_target=True):
     else:
         task_config.TASK.SUCCESS.TYPE = "Success"
     task_config.TASK.SUCCESS.SUCCESS_DISTANCE = task_config.TASK.SUCCESS_DISTANCE
-    task_config.TASK.DISTANCE_TO_GOAL.TYPE = 'Custom_DistanceToGoal'
+    # task_config.TASK.DISTANCE_TO_GOAL.TYPE = 'Custom_DistanceToGoal'
     return task_config
 
 from env_utils.env_wrapper import *

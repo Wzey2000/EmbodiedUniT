@@ -25,7 +25,7 @@ _C.CMD_TRAILING_OPTS = []  # store command line options as list of strings
 _C.IL_TRAINER_NAME = "bc"
 _C.RL_TRAINER_NAME = "ppo"
 _C.ENV_NAME = "NavRLEnv"
-_C.SIMULATOR_GPU_ID = 0
+_C.SIMULATOR_GPU_ID = [0]
 _C.TORCH_GPU_ID = [0]
 _C.VIDEO_OPTION = ["disk", "tensorboard"]
 
@@ -34,18 +34,19 @@ _C.VIDEO_DIR = "data/video_dir"
 _C.EVAL_CKPT_PATH_DIR = "data/eval_checkpoints"  # path to ckpt or path to ckpts dir
 _C.CHECKPOINT_FOLDER = "data/new_checkpoints"
 _C.RESULTS_DIR = "data/eval_results"
+_C.EVAL_SPLIT = "val" # pth to the directory holds the test episodes (*.json.gz) for each test scene
 _C.NUM_PROCESSES = 2
 _C.NUM_VAL_PROCESSES = 0
 
 _C.SENSORS = ["RGB_SENSOR", "DEPTH_SENSOR"]
 
-_C.NUM_UPDATES = 100000000
+_C.NUM_UPDATES = 40000
 _C.TOTAL_NUM_STEPS = -1
-_C.LOG_INTERVAL = 10
+_C.LOG_INTERVAL = 25
 _C.LOG_FILE = "data/train_log"
-_C.CHECKPOINT_INTERVAL = 50
+_C.CHECKPOINT_INTERVAL = 200
 _C.NUM_CHECKPOINTS = -1
-_C.VIS_INTERVAL = 10
+_C.VIS_INTERVAL = 25
 
 _C.POLICY = 'PointNavResNetPolicy'
 _C.visual_encoder_type = 'unsupervised'
@@ -137,6 +138,33 @@ _C.MODEL.DEPTH_ENCODER.backbone = 'resnet50'
 _C.MODEL.DEPTH_ENCODER.trainable = False
 
 _C.MODEL.USE_SEMANTICS = False
+_C.MODEL.SEMANTIC_ENCODER = CN()
+_C.MODEL.SEMANTIC_ENCODER.rednet_ckpt = ''
+_C.MODEL.SEMANTIC_ENCODER.cnn_type = "ResnetSemSegEncoder"
+_C.MODEL.SEMANTIC_ENCODER.output_size = 256
+_C.MODEL.SEMANTIC_ENCODER.backbone = "resnet18"
+_C.MODEL.SEMANTIC_ENCODER.train_encoder = True
+_C.MODEL.SEMANTIC_ENCODER.embedding_size = 4
+_C.MODEL.SEMANTIC_ENCODER.is_thda = True
+_C.MODEL.SEMANTIC_ENCODER.num_classes = 29
+
+_C.MODEL.INSTRUCTION_ENCODER = CN()
+_C.MODEL.INSTRUCTION_ENCODER.sensor_uuid = "instruction"
+_C.MODEL.INSTRUCTION_ENCODER.vocab_size = 2504
+_C.MODEL.INSTRUCTION_ENCODER.use_pretrained_embeddings = True
+_C.MODEL.INSTRUCTION_ENCODER.embedding_file = (
+    "./pretrained_models/embeddings.json.gz"
+)
+# _C.MODEL.INSTRUCTION_ENCODER.dataset_vocab = (
+#     "data/datasets/R2R_VLNCE_v1-3_preprocessed/train/train.json.gz"
+# )
+_C.MODEL.INSTRUCTION_ENCODER.fine_tune_embeddings = False
+_C.MODEL.INSTRUCTION_ENCODER.embedding_size = 50
+_C.MODEL.INSTRUCTION_ENCODER.hidden_size = 128
+_C.MODEL.INSTRUCTION_ENCODER.rnn_type = "LSTM"
+_C.MODEL.INSTRUCTION_ENCODER.final_state_only = True
+_C.MODEL.INSTRUCTION_ENCODER.bidirectional = False
+
 
 _C.MODEL.SEQ2SEQ = CN()
 _C.MODEL.SEQ2SEQ.use_prev_action = True
@@ -145,6 +173,9 @@ _C.MODEL.STATE_ENCODER = CN()
 _C.MODEL.STATE_ENCODER.hidden_size = 512
 _C.MODEL.STATE_ENCODER.num_recurrent_layers = 2
 _C.MODEL.STATE_ENCODER.rnn_type = 'GRU'
+
+_C.MODEL.PROGRESS_MONITOR = CN()
+_C.MODEL.PROGRESS_MONITOR.use = False
 
 _C.USE_GPS_COMPASS = False
 # DDP
@@ -263,7 +294,6 @@ def get_config(
     """
     config = _C.clone()
 
-
     if config_paths:
         if isinstance(config_paths, str):
             if CONFIG_FILE_SEPARATOR in config_paths:
@@ -274,32 +304,42 @@ def get_config(
         for config_path in config_paths:
             config.merge_from_file(config_path)
 
+    navtask_dir = '/'.join(config_paths[0].split('/')[:-2])
     if base_task_config_path:
         config.BASE_TASK_CONFIG_PATH = base_task_config_path
+    else:
+        config.BASE_TASK_CONFIG_PATH = os.path.join(navtask_dir, config.BASE_TASK_CONFIG_PATH)
+    
     config.TASK_CONFIG = get_task_config(config.BASE_TASK_CONFIG_PATH)
+
     #if opts:
     #    config.CMD_TRAILING_OPTS = opts
     #    config.merge_from_list(opts)
     if version is not None and version != "":
         config.VERSION = version
 
+    # VLN
+    config.TASK_CONFIG.defrost()
+    config.TASK_CONFIG.TASK.NDTW.SPLIT = config.TASK_CONFIG.DATASET.SPLIT
+    config.TASK_CONFIG.freeze()
+
     if create_folders:
         if not os.path.exists('data'): os.mkdir('data')
         if not os.path.exists(config.TENSORBOARD_DIR): os.mkdir(config.TENSORBOARD_DIR)
         if not os.path.exists(config.VIDEO_DIR): os.mkdir(config.VIDEO_DIR)
-        if not os.path.exists(config.EVAL_CKPT_PATH_DIR): os.mkdir(config.EVAL_CKPT_PATH_DIR)
+        #if not os.path.exists(config.EVAL_CKPT_PATH_DIR): os.mkdir(config.EVAL_CKPT_PATH_DIR)
         if not os.path.exists(config.CHECKPOINT_FOLDER): os.mkdir(config.CHECKPOINT_FOLDER)
         if not os.path.exists(config.LOG_FILE): os.mkdir(config.LOG_FILE)
 
         config.TENSORBOARD_DIR = os.path.join(config.TENSORBOARD_DIR, config.VERSION)
         config.VIDEO_DIR = os.path.join(config.VIDEO_DIR, config.VERSION)
-        config.EVAL_CKPT_PATH_DIR = os.path.join(config.EVAL_CKPT_PATH_DIR, config.VERSION)
+        #config.EVAL_CKPT_PATH_DIR = os.path.join(config.EVAL_CKPT_PATH_DIR, config.VERSION)
         config.CHECKPOINT_FOLDER = os.path.join(config.CHECKPOINT_FOLDER, config.VERSION)
         config.LOG_FILE = os.path.join(config.LOG_FILE, '{}.log'.format(config.VERSION))
         
         if not os.path.exists(config.TENSORBOARD_DIR): os.mkdir(config.TENSORBOARD_DIR)
         if not os.path.exists(config.VIDEO_DIR): os.mkdir(config.VIDEO_DIR)
-        if not os.path.exists(config.EVAL_CKPT_PATH_DIR): os.mkdir(config.EVAL_CKPT_PATH_DIR)
+        #if not os.path.exists(config.EVAL_CKPT_PATH_DIR): os.mkdir(config.EVAL_CKPT_PATH_DIR)
         if not os.path.exists(config.CHECKPOINT_FOLDER): os.mkdir(config.CHECKPOINT_FOLDER)
 
     config.freeze()

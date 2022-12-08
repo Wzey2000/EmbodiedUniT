@@ -20,9 +20,7 @@ from custom_habitat.datasets.pointnav.pointnav_dataset import (
     PointNavDatasetV1,
 )
 from custom_habitat.tasks.nav.nav import (
-    ObjectGoal,
-    ObjectGoalNavEpisode,
-    ObjectViewLocation,
+    ImageGoal,
     NavigationEpisode,
     NavigationGoal,
     ReplayActionSpec,
@@ -73,7 +71,11 @@ class ImageNavDatasetV1(PointNavDatasetV1):
     content_scenes_path: str = "{data_path}/content/{scene}.json.gz"
 
     def __init__(self, config: Optional[Config] = None) -> None:
-        self.max_replay_steps = config.MAX_REPLAY_STEPS
+        print('\033[0;36;40m[image_nav_dataset] Initializing ImageNav-v1...\033[0m\n')
+        if config is not None:
+            self.max_replay_steps = config.MAX_REPLAY_STEPS
+        else:
+            self.max_replay_steps = 500
         super().__init__(config)
         self.episodes = list(self.episodes)
 
@@ -84,6 +86,7 @@ class ImageNavDatasetV1(PointNavDatasetV1):
         if CONTENT_SCENES_PATH_FIELD in deserialized:
             self.content_scenes_path = deserialized[CONTENT_SCENES_PATH_FIELD]
 
+        print('[ImageNav-v1] Loading {} episodes\n'.format(len(deserialized["episodes"])))
         for episode in deserialized["episodes"]:
             replay = episode['reference_replay']
             if len(replay) > self.max_replay_steps:
